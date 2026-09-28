@@ -112,5 +112,95 @@
                 </RunSynchronousCommand>
             </RunSynchronous>
         </component>
+        <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <DriverPaths>
+                <PathAndCredentials wcm:action="add">
+                    <Order>1</Order>
+                    <Path>D:\drivers\viostor</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add">
+                    <Order>2</Order>
+                    <Path>E:\drivers\viostor</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add">
+                    <Order>3</Order>
+                    <Path>F:\drivers\viostor</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add">
+                    <Order>4</Order>
+                    <Path>G:\drivers\viostor</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add">
+                    <Order>5</Order>
+                    <Path>H:\drivers\viostor</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add">
+                    <Order>6</Order>
+                    <Path>I:\drivers\viostor</Path>
+                </PathAndCredentials>
+            </DriverPaths>
+        </component>
+    </settings>
+
+    <!-- specialize: computer name, bypass OOBE network requirement -->
+    <settings pass="specialize">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <ComputerName>WIN-GOLDEN</ComputerName>
+        </component>
+        <component name="Microsoft-Windows-Deployment" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <RunSynchronous>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>1</Order>
+                    <Description>Bypass OOBE network requirement</Description>
+                    <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v BypassNRO /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+            </RunSynchronous>
+        </component>
+    </settings>
+
+    <!-- oobeSystem: user creation, autologon, WinRM bootstrap -->
+    <settings pass="oobeSystem">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <OOBE>
+                <HideEULAPage>true</HideEULAPage>
+                <HideLocalAccountScreen>true</HideLocalAccountScreen>
+                <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+                <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+                <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+                <NetworkLocation>Work</NetworkLocation>
+                <ProtectYourPC>1</ProtectYourPC>
+                <SkipUserOOBE>true</SkipUserOOBE>
+            </OOBE>
+            <UserAccounts>
+                <LocalAccounts>
+                    <LocalAccount wcm:action="add">
+                        <Description>Packer build account</Description>
+                        <DisplayName>Packer</DisplayName>
+                        <Group>Administrators</Group>
+                        <Name>${winrm_username}</Name>
+                        <Password>
+                            <Value>${winrm_password}</Value>
+                            <PlainText>true</PlainText>
+                        </Password>
+                    </LocalAccount>
+                </LocalAccounts>
+            </UserAccounts>
+            <AutoLogon>
+                <Password>
+                    <Value>${winrm_password}</Value>
+                    <PlainText>true</PlainText>
+                </Password>
+                <Username>${winrm_username}</Username>
+                <LogonCount>1</LogonCount>
+                <Enabled>true</Enabled>
+            </AutoLogon>
+            <FirstLogonCommands>
+                <SynchronousCommand wcm:action="add">
+                    <Order>1</Order>
+                    <Description>Bootstrap WinRM for Packer</Description>
+                    <CommandLine>cmd /c for %i in (C D E F G H) do @if exist %i:\00-bootstrap-winrm.ps1 powershell.exe -ExecutionPolicy Bypass -NoProfile -File %i:\00-bootstrap-winrm.ps1</CommandLine>
+                </SynchronousCommand>
+            </FirstLogonCommands>
+        </component>
     </settings>
 </unattend>
