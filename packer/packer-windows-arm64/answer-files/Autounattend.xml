@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Windows 11 ARM64 unattended installation answer file -->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+    <!-- TODO: add windowsPE, specialize, and oobeSystem configuration passes -->
+</unattend>
