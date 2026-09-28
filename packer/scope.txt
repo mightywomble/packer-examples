@@ -1,0 +1,497 @@
+Step 5: Packer template skeleton
+The following is the correct architectural shape, but device arguments may require adjustment based on the manual virt-manager test:
+Terraform
+packer {
+required_version = ">= 1.10.0"
+
+required_plugins {
+qemu = {
+source = "github.com/hashicorp/qemu"
+version = "~> 1.1"
+}
+}
+}
+
+variable "windows_iso_path" {
+type = string
+}
+
+variable "windows_iso_checksum" {
+type = string
+}
+
+variable "virtio_iso_path" {
+type = string
+}
+
+variable "image_version" {
+type = string
+default = "1.0.0"
+}
+
+variable "winrm_username" {
+type = string
+default = "packer"
+}
+
+variable "winrm_password" {
+type = string
+sensitive = true
+}
+
+source "qemu" "windows11_arm64" {
+iso_url = var.windows_iso_path
+iso_checksum = var.windows_iso_checksum
+
+output_directory = "output/windows11-arm64-${var.image_version}"
+vm_name = "windows11-arm64-golden.qcow2"
+
+qemu_binary = "qemu-system-aarch64"
+machine_type = "virt"
+accelerator = "kvm"
+cpu_model = "host"
+
+cpus = 6
+memory = 8192
+disk_size = "80G"
+format = "qcow2"
+
+headless = false
+
+communicator = "winrm"
+winrm_username = var.winrm_username
+winrm_password = var.winrm_password
+winrm_timeout = "3h"
+
+disk_interface = "virtio"
+net_device = "virtio-net"
+
+cd_files = [
+"answer-files/Autounattend.xml",
+"scripts/00-bootstrap-winrm.ps1"
+]
+
+cd_content = {
+"image-version.txt" = var.image_version
+}
+
+shutdown_timeout = "30m"
+
+shutdown_command = <<-EOF
+powershell.exe -ExecutionPolicy Bypass -File C:\\Windows\\Temp\\90-sysprep.ps1
+EOF
+
+boot_wait = "10s"
+
+boot_command = [
+"<enter>"
+]
+}
+
+build {
+name = "windows11-arm64-golden"
+sources = ["source.qemu.windows11_arm64"]
+
+provisioner "file" {
+source = "assets/software/"
+destination = "C:/Windows/Temp/software"
+}
+
+provisioner "powershell" {
+environment_vars = [
+"IMAGE_VERSION=${var.image_version}"
+]
+
+scripts = [
+"scripts/10-install-software.ps1",
+"scripts/20-apply-policies.ps1",
+"scripts/30-enable-features.ps1",
+"scripts/40-validate-image.ps1",
+"scripts/80-cleanup.ps1"
+]
+}
+
+provisioner "file" {
+source = "scripts/90-sysprep.ps1"
+destination = "C:/Windows/Temp/90-sysprep.ps1"
+}
+}
+Show more lines
+HashiCorp requires `communicator = "winrm"` explicitly for Windows builds and explains that a brand-new Windows ISO generally needs WinRM bootstrap configuration supplied through `Autounattend.xml`. [developer....hicorp.com]
+Important limitation
+An `Autounattend.xml` for Windows 11 ARM64 is not reliably universal. Its edition index, locale, disk layout, account setup and driver-loading paths must match:
+
+-   your exact ISO;
+-   your ISO language;
+-   Windows edition;
+-   QEMU devices;
+-   VirtIO media layout.
+
+Do not blindly reuse an x64 answer file.
+Step 6: Software installation
+Example `scripts/10-install-software.ps1`:
+PowerShell
+$ErrorActionPreference = 'Stop'
+
+$SoftwareRoot = 'C:\Windows\Temp\software'
+
+$SevenZip = Join-Path $SoftwareRoot '7zip-arm64.exe'
+$PowerShell = Join-Path $SoftwareRoot 'powershell-arm64.msi'
+
+if (-not (Test-Path $SevenZip)) {
+throw "7-Zip installer not found: $SevenZip"
+}
+
+if (-not (Test-Path $PowerShell)) {
+throw "PowerShell installer not found: $PowerShell"
+}
+
+$sevenZipProcess = Start-Process `
+-FilePath $SevenZip `
+-ArgumentList '/S' `
+-Wait `
+-PassThru
+
+if ($sevenZipProcess.ExitCode -ne 0) {
+throw "7-Zip installation failed: $($sevenZipProcess.ExitCode)"
+}
+
+$powerShellProcess = Start-Process `
+-FilePath 'msiexec.exe' `
+-ArgumentList "/i `"$PowerShell`" /qn /norestart" `
+-Wait `
+-PassThru
+
+if ($powerShellProcess.ExitCode -notin 0, 3010) {
+throw "PowerShell installation failed: $($powerShellProcess.ExitCode)"
+}
+Show more lines
+Validate the silent-install switches against the exact installers you download.
+Step 7: Apply local policies
+Example `scripts/20-apply-policies.ps1`:
+PowerShell
+$ErrorActionPreference = 'Stop'
+
+function Set-PolicyDword {
+param(
+[Parameter(Mandatory)]
+[string]$Path,
+
+[Parameter(Mandatory)]
+[string]$Name,
+
+[Parameter(Mandatory)]
+[int]$Value
+)
+
+if (-not (Test-Path $Path)) {
+New-Item -Path $Path -Force | Out-Null
+}
+
+New-ItemProperty `
+-Path $Path `
+-Name $Name `
+-PropertyType DWord `
+-Value $Value `
+-Force | Out-Null
+}
+
+Set-PolicyDword `
+-Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging' `
+-Name 'EnableScriptBlockLogging' `
+-Value 1
+
+Set-PolicyDword `
+-Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging' `
+-Name 'EnableModuleLogging' `
+-Value 1
+
+Set-PolicyDword `
+-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit' `
+-Name 'ProcessCreationIncludeCmdLine_Enabled' `
+-Value 1
+
+Set-PolicyDword `
+-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' `
+-Name 'LegalNoticeCaption' `
+-Value 0
+
+Set-ItemProperty `
+-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' `
+-Name 'LegalNoticeCaption' `
+-Value 'Managed Golden Image'
+
+Set-ItemProperty `
+-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' `
+-Name 'LegalNoticeText' `
+-Value 'This system was built, configured and validated through the Packer image pipeline.'
+
+Disable-WindowsOptionalFeature `
+-Online `
+-FeatureName SMB1Protocol `
+-NoRestart `
+-ErrorAction SilentlyContinue
+
+auditpol.exe /set `
+/subcategory:"Process Creation" `
+/success:enable `
+/failure:enable
+
+Disable-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue
+
+gpupdate.exe /force
+Show more lines
+For the banner entries, use string registry values, not DWORDs. The helper function should only be used for DWORD settings.
+Step 8: Enable demonstrable Windows features
+Example `scripts/30-enable-features.ps1`:
+PowerShell
+$ErrorActionPreference = 'Stop'
+
+$capabilities = @(
+'OpenSSH.Client~~~~0.0.1.0',
+'OpenSSH.Server~~~~0.0.1.0'
+)
+
+foreach ($capability in $capabilities) {
+$state = Get-WindowsCapability -Online -Name $capability
+
+if ($state.State -ne 'Installed') {
+Add-WindowsCapability -Online -Name $capability
+}
+}
+
+Set-Service -Name sshd -StartupType Automatic
+Start-Service -Name sshd
+Show more lines
+I would present the three extra capabilities as:
+
+1.  OpenSSH Client
+2.  OpenSSH Server
+3.  Windows Sandbox only if it is available and meaningful in the VM
+
+Nested virtualisation-dependent features may not behave well on this ARM64 KVM setup. A safer third demonstration item is configuration-based:
+
+-   Windows Defender configuration;
+-   audit-policy configuration;
+-   Remote Desktop enablement;
+-   event-log sizing.
+
+Step 9: Test before Sysprep
+Example `scripts/40-validate-image.ps1`:
+PowerShell
+$ErrorActionPreference = 'Stop'
+
+$results = [ordered]@{
+TimestampUtc = (Get-Date).ToUniversalTime().ToString('o')
+Architecture = $env:PROCESSOR_ARCHITECTURE
+SevenZipInstalled = Test-Path 'C:\Program Files\7-Zip\7z.exe'
+PowerShellSevenInstalled = Test-Path 'C:\Program Files\PowerShell\7\pwsh.exe'
+OpenSshServerInstalled = (
+Get-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0'
+).State -eq 'Installed'
+ScriptBlockLogging = $false
+SmbV1Disabled = $false
+GuestDisabled = $false
+}
+
+$scriptLoggingPath =
+'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'
+
+if (Test-Path $scriptLoggingPath) {
+$results.ScriptBlockLogging =
+(Get-ItemProperty $scriptLoggingPath).EnableScriptBlockLogging -eq 1
+}
+
+$smbState = Get-WindowsOptionalFeature `
+-Online `
+-FeatureName SMB1Protocol `
+-ErrorAction SilentlyContinue
+
+$results.SmbV1Disabled = $smbState.State -ne 'Enabled'
+
+$guest = Get-LocalUser -Name Guest -ErrorAction SilentlyContinue
+$results.GuestDisabled = $null -eq $guest -or -not $guest.Enabled
+
+$reportDirectory = 'C:\ImageBuild'
+New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null
+
+$results |
+ConvertTo-Json -Depth 4 |
+Set-Content "$reportDirectory\validation-report.json"
+
+$failed = $results.GetEnumerator() |
+Where-Object {
+$_.Key -notin 'TimestampUtc', 'Architecture' -and
+$_.Value -ne $true
+}
+
+if ($failed) {
+$failed | Format-Table -AutoSize | Out-String | Write-Error
+throw 'Golden-image validation failed.'
+}
+
+Write-Host 'All golden-image validation tests passed.'
+Show more lines
+The important demonstration behaviour is that Packer stops with a failed build if you intentionally break one policy value.
+Step 10: Sysprep
+Example `scripts/90-sysprep.ps1`:
+PowerShell
+$ErrorActionPreference = 'Stop'
+
+$sysprep = Join-Path $env:WINDIR 'System32\Sysprep\Sysprep.exe'
+
+if (-not (Test-Path $sysprep)) {
+throw "Sysprep was not found: $sysprep"
+}
+
+Start-Process `
+-FilePath $sysprep `
+-ArgumentList '/oobe /generalize /shutdown /quiet' `
+-Wait
+
+exit 0
+Show more lines
+Microsoft says generalising removes machine-specific information, including the SID, and prepares the image for reuse. It also warns that updating or installing Microsoft Store apps for individual users can prevent Sysprep from succeeding. [learn.microsoft.com]
+For the demo:
+
+-   do not domain-join the image;
+-   do not activate it permanently;
+-   avoid interacting with Microsoft Store applications;
+-   run Sysprep only at the end;
+-   never boot the master image after successful generalisation;
+-   always boot a copied disk when validating deployment.
+
+Step 11: Initialise and build
+Create your variable file:
+Terraform
+windows_iso_path = "/home/david/iso/Win11_ARM64.iso"
+windows_iso_checksum = "sha256:REPLACE_WITH_REAL_SHA256"
+virtio_iso_path = "/home/david/iso/virtio-win-arm64.iso"
+image_version = "1.0.0"
+winrm_username = "packer"
+winrm_password = "temporary-demo-password"
+Show more lines
+Calculate the ISO hash:
+Shell
+sha256sum /home/david/iso/Win11_ARM64.iso
+Show more lines
+Then:
+Shell
+packer init .
+packer fmt -recursive .
+packer validate .
+PACKER_LOG=1 packer build -on-error=ask .
+Show more lines
+For the live demonstration, `-on-error=ask` is useful because it allows you to pause and inspect the VM if something fails.
+Step 12: Create the VMDK
+After the QCOW2 is produced:
+Shell
+qemu-img info \
+output/windows11-arm64-1.0.0/windows11-arm64-golden.qcow2
+Show more lines
+Convert a copy:
+Shell
+qemu-img convert \
+-p \
+-f qcow2 \
+-O vmdk \
+-o subformat=streamOptimized \
+output/windows11-arm64-1.0.0/windows11-arm64-golden.qcow2 \
+output/windows11-arm64-1.0.0/windows11-arm64-golden.vmdk
+Show more lines
+Then generate checksums:
+Shell
+cd output/windows11-arm64-1.0.0
+sha256sum \
+windows11-arm64-golden.qcow2 \
+windows11-arm64-golden.vmdk \
+> SHA256SUMS
+Show more lines
+Important VMware caveat
+A VMDK is not automatically a VMware template.
+A usable VMware template normally includes:
+
+-   a compatible VMDK;
+-   VM hardware definition;
+-   appropriate ARM64 guest type;
+-   supported firmware;
+-   virtual TPM requirements;
+-   compatible virtual devices;
+-   import or registration into the actual VMware platform;
+-   successful first-boot validation.
+
+Broadcom states that ARM64 guests require UEFI firmware in Fusion on Apple Silicon and identifies NVMe as the recommended storage device and `vmxnet3` as the recommended network adapter. [knowledge....oadcom.com]
+More importantly, Broadcom’s ESXi-Arm response says Windows 11 ARM guest customisation is not currently supported on ESXi Arm. Therefore, do not present the converted VMDK as a validated vSphere production template unless you have tested it on the precise target VMware ARM platform. [community....oadcom.com]
+For the demo, call it:
+
+> VMware-format VMDK candidate
+
+not:
+
+> production VMware template
+
+Step 13: The true ISO creation path
+To produce a customised Windows installation ISO, the flow changes:
+Plain Text
+Packer-built reference VM
+↓
+Sysprep /generalize /shutdown
+↓
+Boot Windows PE
+↓
+DISM /Capture-Image
+↓
+Custom install.wim
+↓
+Replace install.wim in copied ISO tree
+↓
+Create bootable ARM64 ISO
+Show more lines
+Conceptually, the capture command inside Windows PE is:
+PowerShell
+dism /Capture-Image `
+/ImageFile:D:\sources\install.wim `
+/CaptureDir:C:\ `
+/Name:"Windows 11 ARM64 Golden 1.0.0" `
+/Compress:max `
+/CheckIntegrity `
+/Verify
+Show more lines
+You would then reconstruct installation media containing the captured `install.wim`.
+This is where your all-Linux host becomes awkward. Microsoft’s supported Windows deployment tooling, including Windows PE and the Windows ADK workflow, is designed to run in Windows. While Linux ISO tools can author an ISO filesystem, assuming that this alone produces correctly bootable and supportable Windows ARM64 media would be unsafe.
+For a reliable demonstration, I recommend:
+Plain Text
+Phase 1 on Asahi:
+Packer → QEMU → QCOW2 → validation → Sysprep → VMDK candidate
+
+Phase 2 in a Windows build worker:
+Boot WinPE → DISM capture → install.wim → mastered Windows ARM64 ISO
+Show more lines
+What will leave the strongest impression
+Do not spend the demo clicking through Windows Setup. Focus the audience on six proof points:
+1. Repeatability
+Delete the output and rebuild it from the same source.
+2. Modularity
+Remove one script from the pipeline and show how the image profile changes without altering the builder.
+3. Policy as code
+Show the policy registry values in source control, and then prove them inside the built VM.
+4. Controlled failure
+Deliberately introduce one incorrect expected value and show the validation gate block release.
+5. Identity generalisation
+Explain Sysprep, clone the image, and show that the deployed clone enters OOBE rather than retaining the build machine’s identity.
+6. Release evidence
+End on the artifact directory:
+Plain Text
+Image
+VMware-format candidate
+Validation evidence
+Manifest
+Checksums
+Image version
+Source checksum
+Show more lines
+Your best closing sentence would be:
+
+> “This is not a manually maintained Windows build. The image, policy, software, validation, generalisation and release evidence are all generated consistently from version-controlled code.”
+
+That will land substantially better with your audience than presenting Packer as an ISO-editing utility.

@@ -27,6 +27,8 @@ packer_manifest.json
 # Windows installer / executable binaries (large, regenerable)
 *.exe
 *.msi
+# Debug symbol files (not needed for driver loading)
+*.pdb
 # Keep packer source configs tracked; only ignore artifacts above
 
 # ===== Secrets / credentials =====

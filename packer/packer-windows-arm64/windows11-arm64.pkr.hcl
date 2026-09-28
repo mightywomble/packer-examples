@@ -1,2 +1,139 @@
-# Packer build configuration for Windows 11 ARM64 (QEMU/KVM on aarch64 host)
-# TODO: define source "qemu" "windows11_arm64" { ... } and build { ... } blocks
+packer {
+  required_version = ">= 1.10.0"
+
+  required_plugins {
+    qemu = {
+      source  = "github.com/hashicorp/qemu"
+      version = "~> 1.1"
+    }
+  }
+}
+
+source "qemu" "windows11_arm64" {
+  iso_url      = var.windows_iso_path
+  iso_checksum = var.windows_iso_checksum
+
+  output_directory = "output/windows11-arm64-${var.image_version}"
+  vm_name          = "windows11-arm64-golden.qcow2"
+
+  # Wrapper script: rewrites Packer's CD-ROMs to usb-storage (ARM virt has
+  # no IDE/SATA), adds qemu-xhci + usb-kbd + usb-tablet + ramfb. Without
+  # ramfb the display shows only the QEMU monitor; without usb-kbd Packer's
+  # VNC keystrokes go nowhere. See scripts/qemu-wrapper.sh.
+  qemu_binary = "scripts/qemu-wrapper.sh"
+
+  machine_type = "virt"
+  accelerator  = "kvm"
+  cpu_model    = "host"
+
+  cpus      = var.cpus
+  memory    = var.memory
+  disk_size = var.disk_size
+  format    = "qcow2"
+
+  headless = var.headless
+
+  communicator   = "winrm"
+  winrm_username = var.winrm_username
+  winrm_password = var.winrm_password
+  winrm_timeout  = "3h"
+  winrm_port     = 5985
+
+  disk_interface = "virtio"
+  net_device     = "virtio-net"
+
+  # EFI firmware (non-Secure-Boot). No vTPM: the Packer QEMU plugin
+  # hardcodes x86 `tpm-tis` (invalid on ARM virt); Windows TPM/SecureBoot
+  # checks are bypassed via LabConfig in Autounattend.xml.
+  efi_boot          = true
+  efi_firmware_code = "/usr/share/edk2/aarch64/QEMU_EFI-silent-pflash.raw"
+  efi_firmware_vars = "/usr/share/edk2/aarch64/vars-template-pflash.raw"
+  vtpm              = false
+
+  # Supplemental ISO: templated Autounattend.xml + WinRM bootstrap script
+  # via cd_content, and the ARM64 VirtIO driver tree via cd_files. WinPE
+  # loads the bundled viostor/NetKVM drivers via PnpCustomizationsWinPE
+  # from the same CD, so it can see the virtio disk before the disk probe.
+  cd_content = {
+    "Autounattend.xml" = templatefile("answer-files/Autounattend.xml", {
+      winrm_username = var.winrm_username
+      winrm_password = var.winrm_password
+      edition_index  = var.edition_index
+    })
+    "00-bootstrap-winrm.ps1" = file("scripts/00-bootstrap-winrm.ps1")
+    "image-version.txt"      = var.image_version
+  }
+
+  # ARM64 VirtIO drivers bundled into the unattend CD so WinPE can load
+  # them via PnpCustomizationsWinPE before the disk probe. fileset()
+  # recursively globs binary files (cd_content's file() is UTF-8 only).
+  cd_files = [
+    "drivers/viostor/viostor.cat",
+    "drivers/viostor/viostor.inf",
+    "drivers/viostor/viostor.sys",
+    "drivers/NetKVM/netkvm.cat",
+    "drivers/NetKVM/netkvm.inf",
+    "drivers/NetKVM/netkvm.sys",
+  ]
+  cd_label = "UNATTEND"
+
+  shutdown_timeout = "30m"
+
+  shutdown_command = <<-EOF
+    powershell.exe -ExecutionPolicy Bypass -File C:\\Windows\\Temp\\90-sysprep.ps1
+  EOF
+
+  # With the wrapper's usb-kbd + ramfb, Packer's VNC keystrokes reach the
+  # firmware. The "Press any key to boot from CD" prompt appears after
+  # firmware POST + USB enumeration (~5-15s). Spam spacebar across a wide
+  # window so at least one keystroke lands while the prompt is visible.
+  boot_wait = "3s"
+  boot_command = [
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>",
+    "<spacebar><wait1s>"
+  ]
+}
+
+build {
+  name    = "windows11-arm64-golden"
+  sources = ["source.qemu.windows11_arm64"]
+
+  # Copy bundled installers into the VM.
+  provisioner "file" {
+    source      = "assets/software/"
+    destination = "C:/Windows/Temp/software"
+  }
+
+  # Run the provisioning pipeline.
+  provisioner "powershell" {
+    environment_vars = [
+      "IMAGE_VERSION=${var.image_version}"
+    ]
+    scripts = [
+      "scripts/10-install-software.ps1",
+      "scripts/20-apply-policies.ps1",
+      "scripts/30-enable-features.ps1",
+      "scripts/40-validate-image.ps1",
+      "scripts/80-cleanup.ps1"
+    ]
+  }
+
+  # Copy the sysprep script for the shutdown_command to invoke.
+  provisioner "file" {
+    source      = "scripts/90-sysprep.ps1"
+    destination = "C:/Windows/Temp/90-sysprep.ps1"
+  }
+}
