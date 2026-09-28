@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- TEST 4: product key skip + LabConfig bypass + real vTPM via wrapper.
+     The hardware check fires AFTER the product key screen but BEFORE
+     LabConfig RunSynchronous runs, so LabConfig alone can't bypass it.
+     A real vTPM (swtpm + tpm-tis-device in the wrapper) makes Windows
+     detect TPM 2.0 natively and pass the check. LabConfig stays as a
+     safety net for Secure Boot (non-SB firmware). -->
 <unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
-    <!-- windowsPE: locale, disk setup, image selection, VirtIO driver loading -->
     <settings pass="windowsPE">
         <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
             <SetupUILanguage>
@@ -72,98 +77,40 @@
                 <AcceptEula>true</AcceptEula>
                 <FullName>Packer</FullName>
                 <Organization>Packer Demo</Organization>
+                <ProductKey>
+                    <Key>VK7JG-NPHTM-C97JM-9MPGT-3V66T</Key>
+                    <WillShowUI>Never</WillShowUI>
+                </ProductKey>
             </UserData>
         </component>
         <component name="Microsoft-Windows-Deployment" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
             <RunSynchronous>
                 <RunSynchronousCommand wcm:action="add">
                     <Order>1</Order>
-                    <Description>Bypass Windows 11 TPM/SecureBoot/RAM/Storage/CPU checks (no vTPM on ARM KVM)</Description>
-                    <Path>reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassTPMCheck /t REG_DWORD /d 1 /f &amp; reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassSecureBootCheck /t REG_DWORD /d 1 /f &amp; reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassRAMCheck /t REG_DWORD /d 1 /f &amp; reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassStorageCheck /t REG_DWORD /d 1 /f &amp; reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassCPUCheck /t REG_DWORD /d 1 /f</Path>
+                    <Description>Bypass TPM 2.0 check</Description>
+                    <Path>reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path>
                 </RunSynchronousCommand>
-            </RunSynchronous>
-        </component>
-        <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-            <DriverPaths>
-                <PathAndCredentials wcm:action="add">
-                    <Order>1</Order>
-                    <Path>D:\</Path>
-                </PathAndCredentials>
-                <PathAndCredentials wcm:action="add">
-                    <Order>2</Order>
-                    <Path>E:\</Path>
-                </PathAndCredentials>
-                <PathAndCredentials wcm:action="add">
-                    <Order>3</Order>
-                    <Path>F:\</Path>
-                </PathAndCredentials>
-                <PathAndCredentials wcm:action="add">
-                    <Order>4</Order>
-                    <Path>G:\</Path>
-                </PathAndCredentials>
-            </DriverPaths>
-        </component>
-    </settings>
-
-    <!-- specialize: computer name, bypass OOBE network requirement -->
-    <settings pass="specialize">
-        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-            <ComputerName>WIN-GOLDEN</ComputerName>
-        </component>
-        <component name="Microsoft-Windows-Deployment" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-            <RunSynchronous>
                 <RunSynchronousCommand wcm:action="add">
-                    <Order>1</Order>
-                    <Description>Bypass OOBE network requirement</Description>
-                    <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v BypassNRO /t REG_DWORD /d 1 /f</Path>
+                    <Order>2</Order>
+                    <Description>Bypass Secure Boot check</Description>
+                    <Path>reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>3</Order>
+                    <Description>Bypass RAM check</Description>
+                    <Path>reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>4</Order>
+                    <Description>Bypass Storage check</Description>
+                    <Path>reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassStorageCheck /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>5</Order>
+                    <Description>Bypass CPU check</Description>
+                    <Path>reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassCPUCheck /t REG_DWORD /d 1 /f</Path>
                 </RunSynchronousCommand>
             </RunSynchronous>
-        </component>
-    </settings>
-
-    <!-- oobeSystem: user creation, autologon, WinRM bootstrap -->
-    <settings pass="oobeSystem">
-        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-            <OOBE>
-                <HideEULAPage>true</HideEULAPage>
-                <HideLocalAccountScreen>true</HideLocalAccountScreen>
-                <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
-                <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
-                <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
-                <NetworkLocation>Work</NetworkLocation>
-                <ProtectYourPC>1</ProtectYourPC>
-                <SkipUserOOBE>true</SkipUserOOBE>
-            </OOBE>
-            <UserAccounts>
-                <LocalAccounts>
-                    <LocalAccount wcm:action="add">
-                        <Description>Packer build account</Description>
-                        <DisplayName>Packer</DisplayName>
-                        <Group>Administrators</Group>
-                        <Name>${winrm_username}</Name>
-                        <Password>
-                            <Value>${winrm_password}</Value>
-                            <PlainText>true</PlainText>
-                        </Password>
-                    </LocalAccount>
-                </LocalAccounts>
-            </UserAccounts>
-            <AutoLogon>
-                <Password>
-                    <Value>${winrm_password}</Value>
-                    <PlainText>true</PlainText>
-                </Password>
-                <Username>${winrm_username}</Username>
-                <LogonCount>1</LogonCount>
-                <Enabled>true</Enabled>
-            </AutoLogon>
-            <FirstLogonCommands>
-                <SynchronousCommand wcm:action="add">
-                    <Order>1</Order>
-                    <Description>Bootstrap WinRM for Packer</Description>
-                    <CommandLine>cmd /c for %i in (C D E F G H) do @if exist %i:\00-bootstrap-winrm.ps1 powershell.exe -ExecutionPolicy Bypass -NoProfile -File %i:\00-bootstrap-winrm.ps1</CommandLine>
-                </SynchronousCommand>
-            </FirstLogonCommands>
         </component>
     </settings>
 </unattend>

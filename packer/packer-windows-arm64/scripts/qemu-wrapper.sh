@@ -15,13 +15,37 @@
 #    Packer's VNC keystroke injection goes nowhere (no input device in VM).
 # 3. Add ramfb. ARM `virt` ships no graphics card; without ramfb the display
 #    shows only the QEMU monitor console, not the VM screen.
-#
-# No TPM: the Packer QEMU plugin hardcodes x86 `tpm-tis` (invalid on ARM).
-# Windows 11 TPM/SecureBoot checks are bypassed via LabConfig in Autounattend.
+# 4. TPM 2.0 via swtpm + tpm-tis-device (ARM variant). Windows 11's hardware
+#    check fires before LabConfig RunSynchronous runs, so a real vTPM is
+#    needed for Windows to detect TPM 2.0 and pass the check natively.
+# 5. Serial output to /tmp/packer-serial.log for firmware/WinPE diagnosis.
 #
 # Adapted from bbirkinbine/mac-vms scripts/qemu-with-tpm.sh for Linux/KVM.
 
 set -euo pipefail
+
+# ---- start swtpm for TPM 2.0 (Win11 requirement) ----
+# Packer's plugin hardcodes x86 `tpm-tis` (invalid on ARM); we use the
+# ARM variant `tpm-tis-device` instead. swtpm runs in the background;
+# we clean it up when qemu exits.
+SWTPM_DIR=$(mktemp -d /tmp/swtpm-XXXXXX)
+SWTPM_SOCK="${SWTPM_DIR}/swtpm-sock"
+swtpm socket --tpm2 --daemon \
+  --tpmstate dir="${SWTPM_DIR}" \
+  --ctrl type=unixio,path="${SWTPM_SOCK}"
+
+# Wait for swtpm socket to be ready before launching QEMU
+for i in $(seq 1 20); do
+  [[ -S "${SWTPM_SOCK}" ]] && break
+  sleep 0.1
+done
+[[ -S "${SWTPM_SOCK}" ]] || { echo "ERROR: swtpm socket never appeared" >&2; exit 1; }
+
+cleanup() {
+  pkill -f "${SWTPM_SOCK}" 2>/dev/null || true
+  rm -rf "${SWTPM_DIR}"
+}
+trap cleanup EXIT
 
 rewritten_args=()
 device_appends=()
@@ -55,6 +79,11 @@ bus_extras=(
   -device "usb-kbd,bus=usb.0"
   -device "usb-tablet,bus=usb.0"
   -device "ramfb"
+  -device "uefi-vars-sysbus"
+  -chardev "socket,id=chrtpm,path=${SWTPM_SOCK}"
+  -tpmdev "emulator,id=tpm0,chardev=chrtpm"
+  -device "tpm-tis-device,tpmdev=tpm0"
+  -serial "file:/tmp/packer-serial.log"
 )
 
 final_argv=(
@@ -69,4 +98,8 @@ final_argv=(
   printf ' %q\n' qemu-system-aarch64 "${final_argv[@]}"
 } >/tmp/qemu-wrapper.cmd.log 2>/dev/null || true
 
-exec qemu-system-aarch64 "${final_argv[@]}"
+# Run qemu (not exec) so our trap cleans up swtpm on exit
+qemu-system-aarch64 "${final_argv[@]}"
+QEMU_EXIT=$?
+cleanup
+exit $QEMU_EXIT

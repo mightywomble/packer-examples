@@ -42,11 +42,12 @@ source "qemu" "windows11_arm64" {
   disk_interface = "virtio"
   net_device     = "virtio-net"
 
-  # EFI firmware (non-Secure-Boot). No vTPM: the Packer QEMU plugin
-  # hardcodes x86 `tpm-tis` (invalid on ARM virt); Windows TPM/SecureBoot
-  # checks are bypassed via LabConfig in Autounattend.xml.
+  # EFI firmware with Secure Boot support. The qemuvars variant includes
+  # SB code and requires -device uefi-vars-sysbus (added by the wrapper).
+  # Combined with real vTPM (swtpm + tpm-tis-device in the wrapper),
+  # Windows 11's hardware check passes natively.
   efi_boot          = true
-  efi_firmware_code = "/usr/share/edk2/aarch64/QEMU_EFI-silent-pflash.raw"
+  efi_firmware_code = "/usr/share/edk2/aarch64/QEMU_EFI-qemuvars-pflash.raw"
   efi_firmware_vars = "/usr/share/edk2/aarch64/vars-template-pflash.raw"
   vtpm              = false
 
@@ -64,16 +65,10 @@ source "qemu" "windows11_arm64" {
     "image-version.txt"      = var.image_version
   }
 
-  # ARM64 VirtIO drivers bundled into the unattend CD so WinPE can load
-  # them via PnpCustomizationsWinPE before the disk probe. fileset()
-  # recursively globs binary files (cd_content's file() is UTF-8 only).
+  # ARM64 VirtIO drivers bundled into the unattend CD. The ./ prefix
+  # preserves directory structure so DriverPaths can target drivers/ dir.
   cd_files = [
-    "drivers/viostor/viostor.cat",
-    "drivers/viostor/viostor.inf",
-    "drivers/viostor/viostor.sys",
-    "drivers/NetKVM/netkvm.cat",
-    "drivers/NetKVM/netkvm.inf",
-    "drivers/NetKVM/netkvm.sys",
+    "./drivers",
   ]
   cd_label = "UNATTEND"
 
@@ -83,27 +78,17 @@ source "qemu" "windows11_arm64" {
     powershell.exe -ExecutionPolicy Bypass -File C:\\Windows\\Temp\\90-sysprep.ps1
   EOF
 
-  # With the wrapper's usb-kbd + ramfb, Packer's VNC keystrokes reach the
-  # firmware. The "Press any key to boot from CD" prompt appears after
-  # firmware POST + USB enumeration (~5-15s). Spam spacebar across a wide
-  # window so at least one keystroke lands while the prompt is visible.
+  # TPM initialization slows firmware POST, so the "Press any key" prompt
+  # appears later (~15-35s). Spam spacebar from 3s to 43s to cover the
+  # wider window when vTPM is present.
   boot_wait = "3s"
   boot_command = [
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>",
-    "<spacebar><wait1s>"
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>"
   ]
 }
 
