@@ -138,6 +138,33 @@
                     <Order>6</Order>
                     <Path>I:\drivers\viostor</Path>
                 </PathAndCredentials>
+                <!-- NetKVM: virtio network driver. Without this Windows Setup
+                     never stages the NIC driver, so the first-boot network is
+                     dead until netkvm.inf is installed by hand. -->
+                <PathAndCredentials wcm:action="add">
+                    <Order>7</Order>
+                    <Path>D:\drivers\NetKVM</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add">
+                    <Order>8</Order>
+                    <Path>E:\drivers\NetKVM</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add">
+                    <Order>9</Order>
+                    <Path>F:\drivers\NetKVM</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add">
+                    <Order>10</Order>
+                    <Path>G:\drivers\NetKVM</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add">
+                    <Order>11</Order>
+                    <Path>H:\drivers\NetKVM</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add">
+                    <Order>12</Order>
+                    <Path>I:\drivers\NetKVM</Path>
+                </PathAndCredentials>
             </DriverPaths>
         </component>
     </settings>
@@ -158,8 +185,14 @@
         </component>
     </settings>
 
-    <!-- oobeSystem: user creation, autologon, WinRM bootstrap -->
+    <!-- oobeSystem: locale, user creation, autologon, WinRM bootstrap -->
     <settings pass="oobeSystem">
+        <component name="Microsoft-Windows-International-Core" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <InputLocale>en-US</InputLocale>
+            <SystemLocale>en-US</SystemLocale>
+            <UILanguage>en-US</UILanguage>
+            <UserLocale>en-US</UserLocale>
+        </component>
         <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
             <OOBE>
                 <HideEULAPage>true</HideEULAPage>
@@ -198,7 +231,7 @@
                 <SynchronousCommand wcm:action="add">
                     <Order>1</Order>
                     <Description>Bootstrap WinRM for Packer</Description>
-                    <CommandLine>cmd /c for %i in (C D E F G H) do @if exist %i:\00-bootstrap-winrm.ps1 powershell.exe -ExecutionPolicy Bypass -NoProfile -File %i:\00-bootstrap-winrm.ps1</CommandLine>
+                    <CommandLine>cmd /c for %i in (C D E F G H I) do @if exist %i:\00-bootstrap-winrm.ps1 powershell.exe -ExecutionPolicy Bypass -NoProfile -File %i:\00-bootstrap-winrm.ps1</CommandLine>
                 </SynchronousCommand>
             </FirstLogonCommands>
         </component>
