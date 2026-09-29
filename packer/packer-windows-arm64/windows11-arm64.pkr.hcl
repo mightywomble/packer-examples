@@ -78,15 +78,64 @@ source "qemu" "windows11_arm64" {
     powershell.exe -ExecutionPolicy Bypass -File C:\\Windows\\Temp\\90-sysprep.ps1
   EOF
 
-  # TPM initialization slows firmware POST, so the "Press any key" prompt
-  # appears late — and nondeterministically: observed anywhere from ~5s to
-  # just past 63s across runs on 2026-09-29 (two runs hit the prompt inside
-  # the old 3-63s window and booted; a third saw it land past the window,
-  # cdboot reset the VM, the retry timed out, and the firmware fell through
-  # to PXE). Spam spacebar every 2s from 3s to ~200s so the prompt is always
-  # answered — including after a full firmware reset cycle if one is missed.
+  # The cdboot "Press any key to boot from CD or DVD" prompt arrives
+  # nondeterministically: observed anywhere from ~5s to past 200s across
+  # runs on 2026-09-29. The driver is the fresh swtpm instance's first-boot
+  # TPM2 provisioning (software RSA keygen on emulated ARM - host-load
+  # dependent) stretching firmware POST. Two runs missed the window
+  # (a 63s window missed at 13:11; a 200s window missed at 22:26), cdboot
+  # reset the VM, and the retry fell through to PXE. Spam spacebar every 2s
+  # from 3s to ~600s so the prompt is always answered - including across
+  # several cdboot timeout-reset cycles if the prompt keeps arriving late.
+  # Stray presses during setup phases are harmless (no focused controls;
+  # any dialog they summon is dismissed by the next press).
   boot_wait = "3s"
   boot_command = [
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
     "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
     "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
     "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",

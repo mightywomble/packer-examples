@@ -13,8 +13,14 @@ virtualization race, not an image or script problem). A QMP
 system_reset re-enters the boot and usually lands a healthy boot, so
 this supervisor automates that lever.
 
-Wedge detection - ALL must hold (the signature check is what prevents
-false resets during healthy phases):
+Wedge detection - ALL must hold (the arming + signature checks are
+what prevent false resets during healthy phases):
+  - the detector is ARMED: the build disk has been written at least
+    once. Early-boot phases (firmware POST, the cdboot "press any key"
+    prompt) are legitimately static with an untouched disk, and the
+    wedge only ever occurs at a setup REBOOT - by which point the
+    install has written GBs. Without arming, the prompt screen looks
+    exactly like the wedge and the reset budget gets burned on it.
   - the display is static for STATIC_THRESHOLD consecutive dumps
   - the screen matches the firmware-text signature: black-dominant,
     low distinct color count (the firmware console / boot prompt class;
@@ -163,13 +169,15 @@ def main():
 
     os.makedirs(OUT, exist_ok=True)
     log(f'connected to QMP; supervising (interval {opts.interval}s, disk {opts.disk}, '
-        f'wedge = static>={STATIC_THRESHOLD} dumps + firmware-text + disk idle>={DISK_IDLE_THRESHOLD}s, '
-        f'max {MAX_RESETS} resets/{RESET_WINDOW}s)')
+        f'wedge = ARMED-on-first-disk-write + static>={STATIC_THRESHOLD} dumps + firmware-text + '
+        f'disk idle>={DISK_IDLE_THRESHOLD}s, max {MAX_RESETS} resets/{RESET_WINDOW}s)')
 
     prev_hash = None
     static_run = 0
     n = 0
     resets = []
+    disk_baseline = None
+    disk_armed = False
 
     while True:
         n += 1
@@ -203,9 +211,25 @@ def main():
             prev_hash = None
             static_run = 0
 
+        # Arm the wedge detector only after the build disk has been
+        # written at least once: early-boot phases (firmware POST, the
+        # cdboot prompt) are legitimately static with an untouched disk,
+        # and the wedge can only occur at a setup REBOOT - by which point
+        # the install has written GBs.
+        if not disk_armed and os.path.exists(opts.disk):
+            try:
+                mtime = os.path.getmtime(opts.disk)
+                if disk_baseline is None:
+                    disk_baseline = mtime
+                elif mtime > disk_baseline:
+                    disk_armed = True
+                    log('first build-disk write observed - wedge detector armed')
+            except OSError:
+                pass
+
         disk_note = ''
         wedge = False
-        if static_run >= STATIC_THRESHOLD and os.path.exists(opts.disk):
+        if disk_armed and static_run >= STATIC_THRESHOLD:
             try:
                 idle = time.time() - os.path.getmtime(opts.disk)
             except OSError:
