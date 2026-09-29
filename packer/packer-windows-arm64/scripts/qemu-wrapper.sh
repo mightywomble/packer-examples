@@ -19,6 +19,15 @@
 #    check fires before LabConfig RunSynchronous runs, so a real vTPM is
 #    needed for Windows to detect TPM 2.0 and pass the check natively.
 # 5. Serial output to /tmp/packer-serial.log for firmware/WinPE diagnosis.
+# 6. Attach virtio-win ISO as a third usb-storage CD for manual driver
+#    installation (full driver set incl. co-installer .exe files).
+# 7. Second qemu-xhci controller (usb2): qemu-xhci exposes a single usb.0
+#    bus, and once its ports are used QEMU silently auto-inserts a 12 Mb/s
+#    full-speed hub for extra devices. MSDs behind that hub enumerate so
+#    slowly in firmware that the setup ISO's cdboot "Press any key" prompt
+#    lands outside Packer's boot_command window; cdboot then resets the VM,
+#    the retry times out, and the firmware falls through to PXE. Extra CDs
+#    go on the second controller's fast root ports instead.
 #
 # Adapted from bbirkinbine/mac-vms scripts/qemu-with-tpm.sh for Linux/KVM.
 
@@ -61,10 +70,21 @@ while (( i < ${#args[@]} )); do
       # Strip if= and index= keys, add if=none with our id
       stripped="$(printf '%s' "$val" \
         | sed -E 's/(^|,)if=[^,]*//g; s/(^|,)index=[^,]*//g; s/^,+//; s/,,+/,/g; s/,$//')"
+      # First Packer CD is the Windows setup ISO: keep it on usb.0 next to
+      # the input devices (attaches at SuperSpeed on port 3). Any further CD
+      # goes to the second controller (usb2.0) — on the same bus it would be
+      # pushed behind QEMU's auto-inserted 12 Mb/s full-speed hub, which
+      # delays firmware boot enumeration past Packer's boot_command window
+      # and regresses the boot to PXE (observed 2026-09-29).
       cd_id="cd-pkr-${cd_counter}"
+      if (( cd_counter == 0 )); then
+        cd_bus="usb.0"
+      else
+        cd_bus="usb2.0"
+      fi
       cd_counter=$((cd_counter + 1))
       rewritten_args+=("-drive" "${stripped},if=none,id=${cd_id}")
-      device_appends+=("-device" "usb-storage,drive=${cd_id},bus=usb.0")
+      device_appends+=("-device" "usb-storage,drive=${cd_id},bus=${cd_bus}")
       i=$((i + 2))
       continue
     fi
@@ -76,6 +96,7 @@ done
 # Bus extras MUST come before device_appends so the USB bus exists first.
 bus_extras=(
   -device "qemu-xhci,id=usb"
+  -device "qemu-xhci,id=usb2"
   -device "usb-kbd,bus=usb.0"
   -device "usb-tablet,bus=usb.0"
   -device "ramfb"
@@ -90,6 +111,10 @@ final_argv=(
   "${rewritten_args[@]}"
   "${bus_extras[@]}"
   "${device_appends[@]}"
+  # VirtIO-win ISO as third usb-storage CD, on the second controller so it
+  # never lands behind the auto-inserted full-speed hub (see header note 7).
+  -drive "file=/home/david/code/gitea/packer_demo/files/virtio-win-0.1.302.iso,media=cdrom,if=none,id=cd-virtio-win"
+  -device "usb-storage,drive=cd-virtio-win,bus=usb2.0"
 )
 
 # Log final invocation for debugging

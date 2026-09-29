@@ -181,6 +181,19 @@
                     <Description>Bypass OOBE network requirement</Description>
                     <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v BypassNRO /t REG_DWORD /d 1 /f</Path>
                 </RunSynchronousCommand>
+                <!-- WinRM bootstrap, layer 1 (primary): runs during specialize,
+                     before OOBE/first logon, inline with NO dependency on the
+                     unattend CD or its drive letters. FirstLogonCommands can
+                     fire before USB CD-ROM drive letters are assigned (race
+                     observed 2026-09-29: the D:-I: scan found nothing, WinRM
+                     stayed down, firewall on, and the build stalled until the
+                     steps below were applied by hand). Each step is guarded so
+                     the command always exits 0. -->
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>2</Order>
+                    <Description>Enable WinRM and disable firewall for Packer</Description>
+                    <Path>powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "$ErrorActionPreference='Continue'; try{Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue}catch{}; try{Enable-PSRemoting -Force -SkipNetworkProfileCheck}catch{}; try{Set-Item WSMan:\localhost\Service\AllowUnencrypted $true}catch{}; try{Set-Item WSMan:\localhost\Service\Auth\Basic $true}catch{}; try{Set-Item WSMan:\localhost\Client\AllowUnencrypted $true}catch{}; try{Set-Item WSMan:\localhost\Client\Auth\Basic $true}catch{}; netsh advfirewall set allprofiles state off; sc.exe config WinRM start= auto"</Path>
+                </RunSynchronousCommand>
             </RunSynchronous>
         </component>
     </settings>
@@ -231,7 +244,12 @@
                 <SynchronousCommand wcm:action="add">
                     <Order>1</Order>
                     <Description>Bootstrap WinRM for Packer</Description>
-                    <CommandLine>cmd /c for %i in (C D E F G H I) do @if exist %i:\00-bootstrap-winrm.ps1 powershell.exe -ExecutionPolicy Bypass -NoProfile -File %i:\00-bootstrap-winrm.ps1</CommandLine>
+                    <!-- WinRM bootstrap, layer 2 (fallback): wait up to 90s
+                         for the unattend CD to get a drive letter (USB CD-ROM
+                         letters can lag first logon), then run the bootstrap
+                         script from it. The specialize pass (layer 1) should
+                         already have WinRM up before this runs. -->
+                    <CommandLine>powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "$s=$null;for($i=0;$i -lt 45 -and -not $s;$i++){foreach($l in 'C','D','E','F','G','H','I'){$p=$l+':\00-bootstrap-winrm.ps1';if(Test-Path $p){$s=$p}};if(-not $s){Start-Sleep 2}};if($s){&amp; $s}"</CommandLine>
                 </SynchronousCommand>
             </FirstLogonCommands>
         </component>
