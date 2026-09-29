@@ -54,7 +54,21 @@ cleanup() {
   pkill -f "${SWTPM_SOCK}" 2>/dev/null || true
   rm -rf "${SWTPM_DIR}"
 }
-trap cleanup EXIT
+
+# qemu runs in the BACKGROUND with a TERM/INT/EXIT trap that kills it
+# and tears down swtpm. Packer TERMs this wrapper when a build errors or
+# is cancelled, and bash does not run the EXIT trap on SIGTERM - running
+# qemu in the foreground orphaned it and leaked the VM + swtpm (observed
+# 2026-09-29: a leaked session kept running for hours after its build
+# errored and had to be killed by hand).
+QEMU_PID=""
+on_exit() {
+  if [[ -n "${QEMU_PID}" ]]; then
+    kill "${QEMU_PID}" 2>/dev/null || true
+  fi
+  cleanup
+}
+trap on_exit EXIT TERM INT
 
 rewritten_args=()
 device_appends=()
@@ -127,8 +141,12 @@ final_argv=(
   printf ' %q\n' qemu-system-aarch64 "${final_argv[@]}"
 } >/tmp/qemu-wrapper.cmd.log 2>/dev/null || true
 
-# Run qemu (not exec) so our trap cleans up swtpm on exit
-qemu-system-aarch64 "${final_argv[@]}"
-QEMU_EXIT=$?
-cleanup
-exit $QEMU_EXIT
+# Run qemu in the background so the trap teardown always reaches it,
+# and hand its exit code through (wait returns the child's status;
+# set -e is not triggered because of the || capture).
+qemu-system-aarch64 "${final_argv[@]}" &
+QEMU_PID=$!
+QEMU_EXIT=0
+wait "${QEMU_PID}" || QEMU_EXIT=$?
+QEMU_PID=""
+exit "${QEMU_EXIT}"
