@@ -3,8 +3,9 @@ $ErrorActionPreference = 'Stop'
 $results = [ordered]@{
     TimestampUtc             = (Get-Date).ToUniversalTime().ToString('o')
     Architecture             = $env:PROCESSOR_ARCHITECTURE
-    SevenZipInstalled        = Test-Path 'C:\Program Files\7-Zip\7z.exe'
-    PowerShellSevenInstalled = Test-Path 'C:\Program Files\PowerShell\7\pwsh.exe'
+    ChocolateyInstalled      = Test-Path 'C:\ProgramData\chocolatey\bin\choco.exe'
+    ChromeInstalled          = Test-Path 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+    NotepadPlusPlusInstalled = Test-Path 'C:\Program Files\Notepad++\notepad++.exe'
     OpenSshServerInstalled   = (
         Get-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0'
     ).State -eq 'Installed'

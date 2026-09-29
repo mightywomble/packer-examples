@@ -16,9 +16,7 @@ validation, identity generalisation (Sysprep), and release evidence.
 packer_demo/
 ├── files/                         # Source media (gitignored — large)
 │   ├── Win11_25H2_English_Arm64_v2.iso
-│   ├── virtio-win-0.1.302.iso
-│   ├── PowerShell-7.6.6-win-arm64.msi
-│   └── 7z2603-arm64.exe
+│   └── virtio-win-0.1.302.iso
 ├── packer/
 │   ├── scope.txt                  # Original build scope / steps
 │   └── packer-windows-arm64/
@@ -29,7 +27,7 @@ packer_demo/
 │       ├── scripts/
 │       │   ├── qemu-wrapper.sh              # QEMU wrapper (CD-ROM→usb-storage, ramfb, usb-kbd)
 │       │   ├── 00-bootstrap-winrm.ps1       # WinRM bootstrap for Packer
-│       │   ├── 10-install-software.ps1      # 7-Zip + PowerShell silent install
+│       │   ├── 10-install-software.ps1      # Chocolatey + Google Chrome + Notepad++ install
 │       │   ├── 20-apply-policies.ps1        # PS logging, audit, banner, disable SMB1/Guest
 │       │   ├── 30-enable-features.ps1       # OpenSSH, RDP, Defender, event-log sizing
 │       │   ├── 40-validate-image.ps1        # Validation gate (throws on failure)
@@ -37,7 +35,6 @@ packer_demo/
 │       │   └── 90-sysprep.ps1              # Sysprep generalize + shutdown
 │       ├── drivers/viostor/                 # ARM64 viostor driver (extracted from virtio-win)
 │       ├── drivers/NetKVM/                  # ARM64 NetKVM driver (extracted from virtio-win)
-│       ├── assets/software/                 # Installers (gitignored — *.exe/*.msi)
 │       ├── reports/                          # Build validation reports
 │       └── output/                           # Build artifacts (gitignored)
 └── .gitignore
