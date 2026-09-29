@@ -32,7 +32,7 @@ try {
         $stream.Write($buffer, 0, $chunkSize)
     }
 } catch {
-    # Disk is full — expected
+    # Disk is full - expected
 } finally {
     if ($stream) { $stream.Dispose() }
     Remove-Item $zeroFile -Force -ErrorAction SilentlyContinue

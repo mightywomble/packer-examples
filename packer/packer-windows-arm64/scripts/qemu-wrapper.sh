@@ -105,6 +105,10 @@ bus_extras=(
   -tpmdev "emulator,id=tpm0,chardev=chrtpm"
   -device "tpm-tis-device,tpmdev=tpm0"
   -serial "file:/tmp/packer-serial.log"
+  # QMP socket for build supervision: guest-display screendumps and a
+  # remote system_reset lever for stalled boots (Packer itself never uses
+  # it; it drives VNC as usual).
+  -qmp "unix:/tmp/packer-qmp.sock,server,nowait"
 )
 
 final_argv=(

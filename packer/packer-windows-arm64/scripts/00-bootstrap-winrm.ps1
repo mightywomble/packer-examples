@@ -1,8 +1,10 @@
 # Bootstrap WinRM so Packer can communicate with the building VM.
-# Runs as a FirstLogonCommand via Autounattend.xml (fallback layer — the
-# specialize pass in Autounattend.xml already enables WinRM inline before
-# OOBE; this script re-applies everything and installs the bundled ARM64
-# drivers best-effort).
+# Runs at first logon via Autounattend.xml FirstLogonCommands (a retrying
+# waiter locates this script on the unattend CD). First logon is the ONLY
+# safe place for this: an earlier attempt enabled WinRM inline during the
+# specialize pass (2026-09-29) and setup crashed mid-phase with the
+# "computer restarted unexpectedly" reboot loop while devices were still
+# installing - at first logon PnP and the network stack have settled.
 #
 # Ordering note (regression observed 2026-09-29): WinRM + firewall MUST run
 # first with no drive dependency. USB CD-ROM drive letters can lag first
@@ -74,7 +76,7 @@ if ($driverRoot) {
     }
     Write-Host "Drivers installed."
 } else {
-    Write-Warning "drivers directory not found on D:..I: after 90s — driver install skipped (DriverPaths should have staged them)"
+    Write-Warning "drivers directory not found on D:..I: after 90s - driver install skipped (DriverPaths should have staged them)"
 }
 
 Write-Host "Bootstrap complete."

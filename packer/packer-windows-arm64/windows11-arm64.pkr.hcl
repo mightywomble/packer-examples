@@ -79,10 +79,28 @@ source "qemu" "windows11_arm64" {
   EOF
 
   # TPM initialization slows firmware POST, so the "Press any key" prompt
-  # appears later (~15-35s). Spam spacebar from 3s to 43s to cover the
-  # wider window when vTPM is present.
+  # appears late — and nondeterministically: observed anywhere from ~5s to
+  # just past 63s across runs on 2026-09-29 (two runs hit the prompt inside
+  # the old 3-63s window and booted; a third saw it land past the window,
+  # cdboot reset the VM, the retry timed out, and the firmware fell through
+  # to PXE). Spam spacebar every 2s from 3s to ~200s so the prompt is always
+  # answered — including after a full firmware reset cycle if one is missed.
   boot_wait = "3s"
   boot_command = [
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
+    "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
     "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
     "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
     "<spacebar><wait2s><spacebar><wait2s><spacebar><wait2s>",
