@@ -1,9 +1,11 @@
 $ErrorActionPreference = 'Stop'
 
-# Software installs via Chocolatey instead of uploading bundled installers:
-# the WinRM file provisioner moves ~100MB installers at ~30KB/s (an hour or
-# more), while the VM pulls the same packages over HTTPS in minutes. The
-# slirp network is proven (Windows Update pulls GBs through it during setup).
+# Software installs via winget (Windows Package Manager) instead of
+# Chocolatey: winget selects the native ARM64 installer per package
+# manifest from https://github.com/microsoft/winget-pkgs, and the VM
+# pulls payloads over HTTPS in minutes (the old WinRM file upload of
+# bundled installers moved ~100MB at ~30KB/s; the released Chocolatey
+# CLI also lacks reliable ARM64 architecture selection).
 #
 # Pipeline position matters: this runs as the first powershell provisioner,
 # after WinRM connects (network and PnP settled at first logon - NOT during
@@ -11,33 +13,32 @@ $ErrorActionPreference = 'Stop'
 # 40-validate-image.ps1 (which checks these apps landed) and 90-sysprep.ps1
 # (which generalizes them into the image).
 #
-# ARM64 note: Chocolatey itself runs natively. Some packages (e.g. Chrome)
-# may deliver the x64 build, which Windows 11 ARM64 runs under x64
-# emulation.
+# winget ships as "App Installer" on full Windows 11 editions and is
+# available in the WinRM session. Clean or LTSC images without it would
+# need the DesktopAppInstaller msixbundle (plus VCLibs/UI.Xaml ARM64
+# dependencies) bootstrapped first; this script fails loudly instead of
+# guessing.
 
-Write-Host "Installing Chocolatey..."
-Set-ExecutionPolicy Bypass -Scope Process -Force
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-
-# The installer updates PATH for future sessions only; refresh it here so
-# choco is callable in this same session.
-if (-not (Test-Path 'C:\ProgramData\chocolatey\bin\choco.exe')) {
-    throw 'Chocolatey installation failed: choco.exe not found'
+$winget = Get-Command winget -ErrorAction SilentlyContinue
+if (-not $winget) {
+    throw 'winget (App Installer) not found - bootstrap the msixbundle before provisioning'
 }
-$env:Path += ';C:\ProgramData\chocolatey\bin'
-choco --version
+winget --version
 
-Write-Host "Installing Google Chrome..."
-choco install googlechrome -y --no-progress
-if ($LASTEXITCODE -notin 0, 1641, 1642, 3010) {
-    throw "Google Chrome installation failed: $LASTEXITCODE"
+# Native-ARM64 example packages from microsoft/winget-pkgs. To install
+# other software, add its exact ID to this list - e.g. 'Google.Chrome'
+# or 'Notepad++.Notepad++'.
+$packages = @(
+    'Git.Git',
+    '7zip.7zip'
+)
+
+foreach ($pkg in $packages) {
+    Write-Host "Installing $pkg ..."
+    winget install --id $pkg --exact --silent --accept-package-agreements --accept-source-agreements
+    if ($LASTEXITCODE -notin 0, 3010) {
+        throw "$pkg installation failed: $LASTEXITCODE"
+    }
 }
 
-Write-Host "Installing Notepad++..."
-choco install notepadplusplus.install -y --no-progress
-if ($LASTEXITCODE -notin 0, 1641, 1642, 3010) {
-    throw "Notepad++ installation failed: $LASTEXITCODE"
-}
-
-Write-Host "Software installation complete."
+Write-Host 'Software installation complete.'

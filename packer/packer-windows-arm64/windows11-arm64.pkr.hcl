@@ -114,9 +114,10 @@ build {
   name    = "windows11-arm64-golden"
   sources = ["source.qemu.windows11_arm64"]
 
-  # Run the provisioning pipeline. Software installs via Chocolatey in
-  # 10-install-software.ps1 (network downloads in minutes; the WinRM file
-  # upload of the old bundled installers moved ~100MB at ~30KB/s).
+  # Run the provisioning pipeline. Software installs via winget in
+  # 10-install-software.ps1 (network downloads in minutes with native
+  # ARM64 manifests; the WinRM file upload of the old bundled installers
+  # moved ~100MB at ~30KB/s).
   provisioner "powershell" {
     environment_vars = [
       "IMAGE_VERSION=${var.image_version}"

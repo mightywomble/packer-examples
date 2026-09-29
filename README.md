@@ -27,7 +27,7 @@ packer_demo/
 │       ├── scripts/
 │       │   ├── qemu-wrapper.sh              # QEMU wrapper (CD-ROM→usb-storage, ramfb, usb-kbd)
 │       │   ├── 00-bootstrap-winrm.ps1       # WinRM bootstrap for Packer
-│       │   ├── 10-install-software.ps1      # Chocolatey + Google Chrome + Notepad++ install
+│       │   ├── 10-install-software.ps1      # winget installs (Git, 7-Zip - native ARM64 manifests)
 │       │   ├── 20-apply-policies.ps1        # PS logging, audit, banner, disable SMB1/Guest
 │       │   ├── 30-enable-features.ps1       # OpenSSH, RDP, Defender, event-log sizing
 │       │   ├── 40-validate-image.ps1        # Validation gate (throws on failure)
