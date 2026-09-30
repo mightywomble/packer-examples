@@ -11,13 +11,12 @@ Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
 # Clear user temp
 Remove-Item -Path "C:\Users\*\AppData\Local\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
 
-# Clear Windows Update download cache
-Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
-Start-Service -Name wuauserv -ErrorAction SilentlyContinue
-
-# Clear prefetch
-Remove-Item -Path "C:\Windows\Prefetch\*" -Force -ErrorAction SilentlyContinue
+# Windows Update cache clearing and prefetch clearing are REMOVED
+# (2026-09-30): Stop-Service -Force on wuauserv hung indefinitely in the
+# elevated scheduled-task context on emulated ARM64, stalling the build
+# the same way the DISM cleanup did. These are image-size optimizations,
+# not sysprep requirements. The host-side post-build qemu-img convert
+# handles image size.
 
 # DISM StartComponentCleanup /ResetBase is REMOVED (2026-09-30): it took
 # 47+ minutes via the elevated scheduled task on emulated ARM64 (vs ~10 min
