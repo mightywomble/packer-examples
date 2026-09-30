@@ -28,34 +28,34 @@ Write-Host "Removing per-user winget source package (sysprep generalize blocker)
 Get-AppxPackage -Name "Microsoft.Winget.Source*" -ErrorAction SilentlyContinue |
     Remove-AppxPackage -ErrorAction SilentlyContinue
 
-# Launch Sysprep asynchronously (no -Wait) so the WinRM shutdown command
-# returns to Packer cleanly, BUT verify it actually started before exiting.
+# Launch Sysprep via WMI process creation (Win32_Process.Create). This
+# creates the process in the WMI service's own context (running as
+# SYSTEM in its own process tree), completely detached from this
+# script's scheduled-task process tree.
 #
-# -Wait removal alone was not enough (observed 2026-09-30, second attempt):
-# the elevated provisioner runs this script via a scheduled task, and
-# when the script exits immediately after Start-Process, Windows kills
-# the scheduled task's process tree including the just-launched
-# Sysprep.exe - the process died before writing any Panther logs, and
-# the build sat waiting for a shutdown that never came.
+# Previous attempts (observed 2026-09-30, three runs):
+#   1. Start-Process -Wait: WinRM drops mid-shutdown, Packer errors
+#      ("Failed to send shutdown command ... EOF")
+#   2. Start-Process without -Wait: sysprep killed before writing any
+#      Panther logs (immediate process-tree cleanup)
+#   3. Start-Process -PassThru + 10s sleep: sysprep started, wrote 57 KB
+#      of Panther log entries, executed ~50 providers, then was killed
+#      mid-flight during GeneralizeForImaging (usosvc.dll) - the
+#      scheduled task cleanup reached it asynchronously
 #
-# The fix: use -PassThru to get the process object, sleep briefly to let
-# Sysprep.exe initialize and detach from the scheduled task's job, then
-# verify it has not exited before returning. Fast enough for Packer's
-# shutdown command (returns in ~10 seconds), with verification.
+# WMI Win32_Process.Create is the only launch method that puts Sysprep.exe
+# in a completely independent process tree that no scheduled-task
+# cleanup can touch.
 Write-Host "Running Sysprep to generalize the image..."
-$proc = Start-Process `
-    -FilePath $sysprep `
-    -ArgumentList '/oobe /generalize /shutdown /quiet' `
-    -PassThru
+$result = Invoke-CimMethod `
+    -ClassName Win32_Process `
+    -MethodName Create `
+    -Arguments @{ CommandLine = "`"$sysprep`" /oobe /generalize /shutdown /quiet" }
 
-# Give Sysprep.exe time to initialize and create its log files before
-# the scheduled task's process tree is cleaned up.
-Start-Sleep -Seconds 10
-
-if ($proc.HasExited) {
-    throw "Sysprep.exe exited prematurely (exit code $($proc.ExitCode)) - it was likely killed by the scheduled task process tree cleanup"
+if ($result.ReturnValue -ne 0) {
+    throw "Win32_Process.Create failed to launch Sysprep.exe (return code $($result.ReturnValue))"
 }
 
-Write-Host "Sysprep.exe is running (PID $($proc.Id)) - the machine will shut down when it completes."
+Write-Host "Sysprep.exe launched via WMI (PID $($result.ProcessId)) - fully detached from the scheduled task. The machine will shut down when it completes."
 
 exit 0
