@@ -167,7 +167,18 @@ build {
   # 10-install-software.ps1 (network downloads in minutes with native
   # ARM64 manifests; the WinRM file upload of the old bundled installers
   # moved ~100MB at ~30KB/s).
+  #
+  # Elevated (scheduled-task) execution: DISM servicing operations
+  # (Add-WindowsCapability in 30-enable-features.ps1) fail with "Access is
+  # denied" from the WinRM session's network-logon token even though it
+  # is an admin token (observed 2026-09-30: machine-wide MSI installs and
+  # HKLM writes succeed in the same session, but the CBS/servicing stack
+  # rejects the session type). elevated_user/elevated_password make
+  # Packer run the scripts via a scheduled task with a full elevation
+  # token, which the servicing stack accepts.
   provisioner "powershell" {
+    elevated_user     = var.winrm_username
+    elevated_password = var.winrm_password
     environment_vars = [
       "IMAGE_VERSION=${var.image_version}"
     ]
