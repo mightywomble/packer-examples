@@ -19,9 +19,14 @@ Start-Service -Name wuauserv -ErrorAction SilentlyContinue
 # Clear prefetch
 Remove-Item -Path "C:\Windows\Prefetch\*" -Force -ErrorAction SilentlyContinue
 
-# DISM component cleanup
-Write-Host "Running DISM cleanup..."
-dism.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase
+# DISM StartComponentCleanup /ResetBase is REMOVED (2026-09-30): it took
+# 47+ minutes via the elevated scheduled task on emulated ARM64 (vs ~10 min
+# in prior non-elevated runs) and stalled the build at "Cleaning up
+# temporary files..." while the guest sat idle. It is purely an image-size
+# optimization - sysprep does not depend on it. The host-side post-build
+# qemu-img convert to VMDK with subformat=streamOptimized handles image
+# size. Re-add it only after profiling why it stalls in the elevated
+# context on this hardware.
 
 # Free-space zeroing is REMOVED (2026-09-30). Writing zeros until the
 # disk is full starved sysprep and shutdown of scratch space (registry
