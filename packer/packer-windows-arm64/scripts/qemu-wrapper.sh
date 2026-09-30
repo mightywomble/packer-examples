@@ -33,15 +33,23 @@
 
 set -euo pipefail
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 # ---- start swtpm for TPM 2.0 (Win11 requirement) ----
 # Packer's plugin hardcodes x86 `tpm-tis` (invalid on ARM); we use the
 # ARM variant `tpm-tis-device` instead. swtpm runs in the background;
 # we clean it up when qemu exits.
+# It runs WITHOUT --daemon and under scripts/pdeathsig-exec.py
+# (PR_SET_PDEATHSIG): --daemon forks and fork clears PDEATHSIG, and an
+# EXIT/TERM trap alone did not stop leaks when Packer's teardown kills
+# the wrapper without a trappable signal. With PDEATHSIG the kernel
+# kills swtpm and qemu the instant the wrapper dies, however it dies.
 SWTPM_DIR=$(mktemp -d /tmp/swtpm-XXXXXX)
 SWTPM_SOCK="${SWTPM_DIR}/swtpm-sock"
-swtpm socket --tpm2 --daemon \
+"${SCRIPT_DIR}/pdeathsig-exec.py" swtpm socket --tpm2 \
   --tpmstate dir="${SWTPM_DIR}" \
-  --ctrl type=unixio,path="${SWTPM_SOCK}"
+  --ctrl type=unixio,path="${SWTPM_SOCK}" &
+SWTPM_PID=$!
 
 # Wait for swtpm socket to be ready before launching QEMU
 for i in $(seq 1 20); do
@@ -141,10 +149,11 @@ final_argv=(
   printf ' %q\n' qemu-system-aarch64 "${final_argv[@]}"
 } >/tmp/qemu-wrapper.cmd.log 2>/dev/null || true
 
-# Run qemu in the background so the trap teardown always reaches it,
-# and hand its exit code through (wait returns the child's status;
-# set -e is not triggered because of the || capture).
-qemu-system-aarch64 "${final_argv[@]}" &
+# Run qemu in the background under pdeathsig-exec.py (kernel-killed
+# if this wrapper dies however it dies), and hand its exit code through
+# (wait returns the child's status; set -e is not triggered because of
+# the || capture).
+"${SCRIPT_DIR}/pdeathsig-exec.py" qemu-system-aarch64 "${final_argv[@]}" &
 QEMU_PID=$!
 QEMU_EXIT=0
 wait "${QEMU_PID}" || QEMU_EXIT=$?
