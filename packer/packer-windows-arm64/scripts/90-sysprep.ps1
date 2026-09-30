@@ -28,10 +28,17 @@ Write-Host "Removing per-user winget source package (sysprep generalize blocker)
 Get-AppxPackage -Name "Microsoft.Winget.Source*" -ErrorAction SilentlyContinue |
     Remove-AppxPackage -ErrorAction SilentlyContinue
 
+# Launch Sysprep WITHOUT -Wait: the script must return to Packer
+# immediately so the WinRM shutdown command completes cleanly, then
+# Packer enters its "waiting for machine to stop" loop while Sysprep
+# works in the background. With -Wait, Sysprep finishes and calls the
+# Windows shutdown API before the script can return - the WinRM service
+# stops mid-response, Packer sees the connection drop as an error
+# ("Failed to send shutdown command ... EOF", observed 2026-09-30), and
+# the build errors even though sysprep itself succeeded.
 Write-Host "Running Sysprep to generalize the image..."
 Start-Process `
     -FilePath $sysprep `
-    -ArgumentList '/oobe /generalize /shutdown /quiet' `
-    -Wait
+    -ArgumentList '/oobe /generalize /shutdown /quiet'
 
 exit 0
