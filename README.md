@@ -31,7 +31,7 @@ packer_demo/
 │       │   ├── 20-apply-policies.ps1        # PS logging, audit, banner, disable SMB1/Guest
 │       │   ├── 30-enable-features.ps1       # OpenSSH, RDP, Defender, event-log sizing
 │       │   ├── 40-validate-image.ps1        # Validation gate (throws on failure)
-│       │   ├── 80-cleanup.ps1               # Temp/DISM cleanup, zero free space
+│       │   ├── 80-cleanup.ps1               # Temp/DISM cleanup, free-space gate (compaction host-side)
 │       │   ├── 90-sysprep.ps1              # Sysprep generalize + shutdown
 │       │   └── qmp-supervisor.py            # Auto-heal supervisor (detect boot wedge, reset)
 │       ├── drivers/viostor/                 # ARM64 viostor driver (extracted from virtio-win)

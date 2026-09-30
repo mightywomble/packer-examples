@@ -23,38 +23,19 @@ Remove-Item -Path "C:\Windows\Prefetch\*" -Force -ErrorAction SilentlyContinue
 Write-Host "Running DISM cleanup..."
 dism.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase
 
-# Zero free space for qcow2 compaction - WITH A SAFETY MARGIN. The old
-# version filled the disk to 100% and relied on a silently-suppressed
-# Remove-Item to give the space back; on 2026-09-30 the guest reported 0%
-# free during sysprep, sysprep never completed, and the build timed out
-# waiting for the machine to shut down. Stop with a few GB free instead:
-# the compaction penalty is negligible and the pagefile/NTFS/sysprep all
-# keep working headroom.
-Write-Host "Zeroing free space for qcow2 compaction..."
-$marginBytes = 4GB
-$zeroFile = "C:\zero.tmp"
-$chunkSize = 16MB
-$buffer = New-Object byte[] $chunkSize
-$stream = $null
-try {
-    $stream = [System.IO.File]::OpenWrite($zeroFile)
-    while ((Get-PSDrive -Name C).Free -gt $marginBytes) {
-        $stream.Write($buffer, 0, $chunkSize)
-    }
-} catch {
-    Write-Host "Zeroing stopped early: $($_.Exception.Message)"
-} finally {
-    if ($stream) { $stream.Dispose() }
-    # The delete is NOT silently suppressed: if it fails, the pipeline
-    # must fail loudly here instead of letting sysprep starve later.
-    Remove-Item $zeroFile -Force -ErrorAction Stop
-}
+# Free-space zeroing is REMOVED (2026-09-30). Writing zeros until the
+# disk is full starved sysprep and shutdown of scratch space (registry
+# flushes, event logs, pagefile writes) - the guest sat at 0% free during
+# sysprep, sysprep never completed, and the build timed out waiting for
+# the machine to shut down. Image compaction is left to the host-side
+# post-build step instead: the README's qemu-img convert to VMDK with
+# subformat=streamOptimized is already a compressed format, so freed
+# blocks cost little there without ever filling the guest disk.
 
-# Hard gates before handing off to sysprep (90-sysprep.ps1 / Sysprep.exe
-# both need scratch space; fail HERE, loudly, not 30 minutes later).
-if (Test-Path $zeroFile) {
-    throw "Zero file still exists after cleanup: $zeroFile"
-}
+# Pre-sysprep sanity gate (90-sysprep.ps1 gates the same way): report
+# free space and refuse to hand off if the disk is dangerously full -
+# Sysprep.exe needs scratch space; fail HERE, loudly, in seconds, not
+# after the shutdown timeout.
 $freeGB = [math]::Round((Get-PSDrive -Name C).Free / 1GB, 1)
 Write-Host "Free space after cleanup: $freeGB GB"
 if ($freeGB -lt 2) {
