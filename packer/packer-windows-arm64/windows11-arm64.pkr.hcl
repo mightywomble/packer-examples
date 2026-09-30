@@ -72,7 +72,12 @@ source "qemu" "windows11_arm64" {
   ]
   cd_label = "UNATTEND"
 
-  shutdown_timeout = "30m"
+  # 60m: sysprep /generalize on emulated ARM64 can legitimately take half
+  # an hour (the 2026-09-30 run burned the old 30m while sysprep starved on
+  # a 0%-free disk; the free-space gates in 80-cleanup.ps1 and
+  # 90-sysprep.ps1 now prevent the disk-full case, and the extra headroom
+  # covers slow-but-healthy sysprep runs).
+  shutdown_timeout = "60m"
 
   shutdown_command = <<-EOF
     powershell.exe -ExecutionPolicy Bypass -File C:\\Windows\\Temp\\90-sysprep.ps1
