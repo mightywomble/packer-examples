@@ -28,17 +28,34 @@ Write-Host "Removing per-user winget source package (sysprep generalize blocker)
 Get-AppxPackage -Name "Microsoft.Winget.Source*" -ErrorAction SilentlyContinue |
     Remove-AppxPackage -ErrorAction SilentlyContinue
 
-# Launch Sysprep WITHOUT -Wait: the script must return to Packer
-# immediately so the WinRM shutdown command completes cleanly, then
-# Packer enters its "waiting for machine to stop" loop while Sysprep
-# works in the background. With -Wait, Sysprep finishes and calls the
-# Windows shutdown API before the script can return - the WinRM service
-# stops mid-response, Packer sees the connection drop as an error
-# ("Failed to send shutdown command ... EOF", observed 2026-09-30), and
-# the build errors even though sysprep itself succeeded.
+# Launch Sysprep asynchronously (no -Wait) so the WinRM shutdown command
+# returns to Packer cleanly, BUT verify it actually started before exiting.
+#
+# -Wait removal alone was not enough (observed 2026-09-30, second attempt):
+# the elevated provisioner runs this script via a scheduled task, and
+# when the script exits immediately after Start-Process, Windows kills
+# the scheduled task's process tree including the just-launched
+# Sysprep.exe - the process died before writing any Panther logs, and
+# the build sat waiting for a shutdown that never came.
+#
+# The fix: use -PassThru to get the process object, sleep briefly to let
+# Sysprep.exe initialize and detach from the scheduled task's job, then
+# verify it has not exited before returning. Fast enough for Packer's
+# shutdown command (returns in ~10 seconds), with verification.
 Write-Host "Running Sysprep to generalize the image..."
-Start-Process `
+$proc = Start-Process `
     -FilePath $sysprep `
-    -ArgumentList '/oobe /generalize /shutdown /quiet'
+    -ArgumentList '/oobe /generalize /shutdown /quiet' `
+    -PassThru
+
+# Give Sysprep.exe time to initialize and create its log files before
+# the scheduled task's process tree is cleaned up.
+Start-Sleep -Seconds 10
+
+if ($proc.HasExited) {
+    throw "Sysprep.exe exited prematurely (exit code $($proc.ExitCode)) - it was likely killed by the scheduled task process tree cleanup"
+}
+
+Write-Host "Sysprep.exe is running (PID $($proc.Id)) - the machine will shut down when it completes."
 
 exit 0
