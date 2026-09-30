@@ -191,6 +191,7 @@ def main():
             sys.exit(0)
 
         state = 'no-file'
+        screen_is_fw_text = False
         if os.path.exists(ppm):
             digest = hashlib.sha256(open(ppm, 'rb').read()).hexdigest()
             if digest == prev_hash:
@@ -200,6 +201,15 @@ def main():
                 static_run = 0
                 state = 'CHANGED'
             prev_hash = digest
+
+            # The signature must be evaluated on the PPM screendump BEFORE
+            # it is deleted below: firmware_text_signature parses P6 PPM
+            # data, and feeding it the converted PNG always returned False,
+            # so the wedge detector silently never fired (observed
+            # 2026-09-30: a wedged boot sat for 6+ minutes with zero
+            # auto-resets and had to be reset by hand).
+            if static_run >= STATIC_THRESHOLD:
+                screen_is_fw_text = firmware_text_signature(ppm)
 
             png = ppm[:-4] + '.png'
             try:
@@ -235,7 +245,7 @@ def main():
             except OSError:
                 idle = None
             if idle is not None and idle >= DISK_IDLE_THRESHOLD:
-                if firmware_text_signature(png):
+                if screen_is_fw_text:
                     wedge = True
                     disk_note = f' disk_idle={int(idle)}s'
 
