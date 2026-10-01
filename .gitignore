@@ -9,6 +9,8 @@ assets/software/
 packer_cache/
 # Build output directories (packer-builder-* write here)
 output-*/
+# Per-project packer output_dir (e.g. packer/packer-windows-arm64/output/)
+output/
 # Packer manifest (regenerated each build)
 packer_manifest.json
 # Generated VM images / disk formats
