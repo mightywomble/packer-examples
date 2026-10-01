@@ -1,0 +1,5 @@
+---
+# Demo database settings (documented demo credentials - see README).
+lamp_db_name: lampdemo
+lamp_db_user: lampuser
+lamp_db_password: lamppassword

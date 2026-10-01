@@ -1,0 +1,6 @@
+---
+apache_package: apache2
+apache_service: apache2
+apache_user: www-data
+apache_group: www-data
+apache_docroot: /var/www/html

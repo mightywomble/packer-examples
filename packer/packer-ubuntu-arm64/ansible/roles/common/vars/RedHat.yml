@@ -1,0 +1,9 @@
+---
+base_packages:
+  - curl
+  - vim-enhanced
+  - wget
+  - ca-certificates
+# RHEL/Rocky/Alma AppStream carries ansible-core (full 'ansible' needs EPEL).
+ansible_packages:
+  - ansible-core

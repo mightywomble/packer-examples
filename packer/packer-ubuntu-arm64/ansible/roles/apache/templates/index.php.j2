@@ -1,0 +1,8 @@
+<?php
+/* LAMP image validation page (deployed by the apache role). The verify
+   role fetches this page and checks for the LAMP-OK marker; the build
+   fails if the page does not render. ASCII only (repo rule). */
+header('Content-Type: text/html; charset=utf-8');
+echo 'LAMP-OK PHP ' . PHP_VERSION . ' on ' . php_uname('n') . "\n";
+echo "<!-- rendered " . date('c') . " -->\n";
+phpinfo(INFO_MODULES);

@@ -1,0 +1,78 @@
+---
+# apache: install, enable + start, deploy the LAMP index page, and open
+# 80/443 only if a firewall is actually active (guarded, idempotent).
+- name: Load distribution-specific variables (apache)
+  ansible.builtin.include_vars: "{{ lookup('ansible.builtin.first_found', params) }}"
+  vars:
+    params:
+      files:
+        - "{{ ansible_facts['distribution'] }}.yml"
+        - "{{ ansible_facts['os_family'] }}.yml"
+      paths:
+        - "{{ role_path }}/vars"
+
+- name: Install Apache
+  ansible.builtin.package:
+    name: "{{ apache_package }}"
+    state: present
+  notify: Restart Apache
+
+- name: Enable and start Apache
+  ansible.builtin.service:
+    name: "{{ apache_service }}"
+    state: started
+    enabled: true
+
+- name: Deploy PHP index page
+  ansible.builtin.template:
+    src: index.php.j2
+    dest: "{{ apache_docroot }}/index.php"
+    owner: "{{ apache_user }}"
+    group: "{{ apache_group }}"
+    mode: "0644"
+  notify: Restart Apache
+
+- name: Remove the default placeholder index page (Debian family)
+  # apache2 ships /var/www/html/index.html (an "It works!"-style
+  # placeholder), which DirectoryIndex serves ahead of index.php - without
+  # this, GET / answers with the placeholder instead of the LAMP page
+  # (found by the end-to-end clone test on 2026-10-01). httpd on RedHat
+  # ships no index.html, hence the family guard.
+  ansible.builtin.file:
+    path: "{{ apache_docroot }}/index.html"
+    state: absent
+  when: ansible_facts['os_family'] == 'Debian'
+  notify: Restart Apache
+
+- name: Check whether ufw is active (Debian family)
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  failed_when: false
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Allow HTTP and HTTPS through ufw (only if active)
+  ansible.builtin.command: "ufw allow {{ item }}/tcp"
+  loop:
+    - "80"
+    - "443"
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - "'Status: active' in (ufw_status.stdout | default(''))"
+
+- name: Check whether firewalld is running (RedHat family)
+  ansible.builtin.command: firewall-cmd --state
+  register: firewalld_state
+  changed_when: false
+  failed_when: false
+  when: ansible_facts['os_family'] == 'RedHat'
+
+- name: Allow HTTP and HTTPS through firewalld (only if running)
+  ansible.builtin.command: "firewall-cmd --permanent --add-service={{ item }}"
+  loop:
+    - http
+    - https
+  notify: Reload firewalld
+  when:
+    - ansible_facts['os_family'] == 'RedHat'
+    - "'running' in (firewalld_state.stdout | default(''))"

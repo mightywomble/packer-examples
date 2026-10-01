@@ -1,0 +1,9 @@
+---
+base_packages:
+  - curl
+  - vim
+  - wget
+  - ca-certificates
+# Ubuntu universe repository carries the full 'ansible' package.
+ansible_packages:
+  - ansible

@@ -1,0 +1,6 @@
+---
+# apache_service comes from the apache role's include_vars (same play).
+- name: Restart Apache after PHP install
+  ansible.builtin.service:
+    name: "{{ apache_service }}"
+    state: restarted

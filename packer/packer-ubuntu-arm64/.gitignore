@@ -1,0 +1,5 @@
+# Build artifacts: the golden image, per-build firmware state (efivars.fd),
+# and per-build checksums - regenerable from a clean build (see README).
+# (The repo-root .gitignore covers output-*/ and the image extensions, but
+# not the output/ directory shape this project uses.)
+output/

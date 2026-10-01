@@ -1,0 +1,74 @@
+---
+# verify: validation gate - fails the build if the LAMP stack is not
+# working. Writes reports/validation-report.json into the image, which
+# Packer downloads into the repo's reports/ directory.
+- name: Gather service facts
+  ansible.builtin.service_facts:
+
+- name: Resolve the Apache service state
+  ansible.builtin.set_fact:
+    apache_state: >-
+      {{ (ansible_facts.services | dict2items
+        | selectattr('key', 'search', '^' + apache_service + '\.service?$')
+        | map(attribute='value.state') | list | join(',')) or 'not-found' }}
+
+- name: Resolve the MariaDB service state
+  ansible.builtin.set_fact:
+    mariadb_state: >-
+      {{ (ansible_facts.services | dict2items
+        | selectattr('key', 'search', '^' + db_service + '\.service?$')
+        | map(attribute='value.state') | list | join(',')) or 'not-found' }}
+
+- name: Fetch the LAMP page at / (captured; asserted below)
+  # Checks GET / - the real-world path - not just /index.php, so a
+  # placeholder index.html shadowing the PHP page fails the gate (caught
+  # by the 2026-10-01 end-to-end clone test; the apache role now removes
+  # the placeholder).
+  ansible.builtin.uri:
+    url: http://localhost/
+    return_content: true
+    status_code:
+      - 200
+  register: lamp_page
+  failed_when: false
+  changed_when: false
+
+- name: Assemble the validation report
+  ansible.builtin.set_fact:
+    validation_report:
+      timestamp_utc: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+      os_family: "{{ ansible_facts['os_family'] }}"
+      distribution: "{{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+      apache_service: "{{ apache_service }}"
+      apache_state: "{{ apache_state }}"
+      mariadb_state: "{{ mariadb_state }}"
+      lamp_page_status: "{{ lamp_page.status | default(0) }}"
+      lamp_page_marker: "{{ 'LAMP-OK' in (lamp_page.content | default('')) }}"
+
+- name: Ensure the report directory exists
+  ansible.builtin.file:
+    path: /var/lib/image-build
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the validation report into the image
+  ansible.builtin.copy:
+    content: "{{ validation_report | to_nice_json }}"
+    dest: /var/lib/image-build/validation-report.json
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Assert the LAMP stack is working (fails the build if not)
+  ansible.builtin.assert:
+    that:
+      - apache_state == 'running'
+      - mariadb_state == 'running'
+      - lamp_page.status | default(0) == 200
+      - "'LAMP-OK' in (lamp_page.content | default(''))"
+    fail_msg: >-
+      LAMP validation failed: apache={{ apache_state }},
+      mariadb={{ mariadb_state }},
+      page_status={{ lamp_page.status | default(0) }}

@@ -1,0 +1,40 @@
+---
+# common: full package update (the "update the ISO" requirement), base
+# tools, and Ansible installed into the image. Cross-platform: Debian
+# (apt) and RedHat (dnf) families.
+- name: Load distribution-specific variables (common)
+  ansible.builtin.include_vars: "{{ lookup('ansible.builtin.first_found', params) }}"
+  vars:
+    params:
+      files:
+        - "{{ ansible_facts['distribution'] }}.yml"
+        - "{{ ansible_facts['os_family'] }}.yml"
+      paths:
+        - "{{ role_path }}/vars"
+
+- name: Update package cache (Debian family)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Upgrade all packages (Debian family)
+  ansible.builtin.apt:
+    upgrade: dist
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Upgrade all packages (RedHat family)
+  ansible.builtin.dnf:
+    name: '*'
+    state: latest
+  when: ansible_facts['os_family'] == 'RedHat'
+
+- name: Install base packages
+  ansible.builtin.package:
+    name: "{{ base_packages }}"
+    state: present
+
+- name: Install Ansible into the image
+  ansible.builtin.package:
+    name: "{{ ansible_packages }}"
+    state: present

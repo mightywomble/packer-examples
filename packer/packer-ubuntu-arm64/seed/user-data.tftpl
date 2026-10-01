@@ -1,0 +1,36 @@
+#cloud-config
+# Autoinstall seed for Ubuntu 26.04 live-server (arm64).
+# Templated by Packer's cd_content (templatefile) and attached as a
+# 'cidata' CD; cloud-init's NoCloud datasource reads it by label.
+# The build_pubkey placeholder is filled by Packer; everything else is
+# literal. ASCII only (repo rule: guest-executed files must be pure ASCII).
+autoinstall:
+  version: 1
+  locale: en_GB.UTF-8
+  keyboard:
+    layout: gb
+  identity:
+    hostname: ubuntu-server
+    username: ubuntu
+    # Demo build password: 'ubuntu' (openssl passwd -6, documented in the
+    # project README). Locked by scripts/80-cleanup.sh at end of build.
+    password: "$6$f.X2PMivcV32q6hj$YpBvatKTYbhMmkvrU76/aYz9IRsPTvWGwaD/bmvJDYgSXMZXfvzOVUCtMYHhl0WK6oJBFbF6fUWX9/TLzh7560"
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys:
+      - ${build_pubkey}
+  storage:
+    layout:
+      name: direct
+  packages:
+    - qemu-guest-agent
+    - curl
+  late-commands:
+    # NOPASSWD sudo: Packer's shutdown_command and Ansible's become need
+    # sudo over the SSH session without a TTY or password.
+    - curtin in-target --target=/target -- sh -c 'printf "ubuntu ALL=(ALL) NOPASSWD:ALL\n" > /etc/sudoers.d/90-build-user && chmod 0440 /etc/sudoers.d/90-build-user'
+    # Belt-and-braces: the same build key appended to authorized_keys in
+    # case the ssh.authorized-keys directive behaves differently on this
+    # installer version (a duplicate line is harmless).
+    - curtin in-target --target=/target -- sh -c 'install -d -m 0700 -o ubuntu -g ubuntu /home/ubuntu/.ssh && printf "%s\n" "${build_pubkey}" >> /home/ubuntu/.ssh/authorized_keys && chown ubuntu:ubuntu /home/ubuntu/.ssh/authorized_keys && chmod 0600 /home/ubuntu/.ssh/authorized_keys'

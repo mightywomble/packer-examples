@@ -1,0 +1,15 @@
+---
+# Cross-platform LAMP server image provisioning (Ubuntu/Debian and RedHat
+# families). Run by Packer's ansible provisioner, which supplies the
+# inventory. Roles in order: update + ansible install, Apache, MariaDB,
+# PHP, then a validation gate that fails the build if LAMP is broken.
+- name: LAMP server image build
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - common
+    - apache
+    - mariadb
+    - php
+    - verify

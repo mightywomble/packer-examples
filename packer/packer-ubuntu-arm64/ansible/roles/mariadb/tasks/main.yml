@@ -1,0 +1,87 @@
+---
+# mariadb: install, enable + start, remove anonymous/test access, and
+# create a small demo database + user. Uses the mysql CLI as root
+# (unix_socket auth on both families) so the playbook needs only
+# ansible.builtin modules - no collections to install.
+- name: Load distribution-specific variables (mariadb)
+  ansible.builtin.include_vars: "{{ lookup('ansible.builtin.first_found', params) }}"
+  vars:
+    params:
+      files:
+        - "{{ ansible_facts['distribution'] }}.yml"
+        - "{{ ansible_facts['os_family'] }}.yml"
+      paths:
+        - "{{ role_path }}/vars"
+
+- name: Install MariaDB server and Python bindings
+  ansible.builtin.package:
+    name: "{{ db_packages }}"
+    state: present
+
+- name: Enable and start MariaDB
+  ansible.builtin.service:
+    name: "{{ db_service }}"
+    state: started
+    enabled: true
+
+- name: Remove anonymous accounts
+  ansible.builtin.command:
+    argv:
+      - mysql
+      - -e
+      - DELETE FROM mysql.user WHERE User='';
+  changed_when: false
+
+- name: Remove test database if present
+  ansible.builtin.command:
+    argv:
+      - mysql
+      - -e
+      - DROP DATABASE IF EXISTS test;
+  changed_when: false
+
+- name: Check whether the demo database exists
+  ansible.builtin.command:
+    argv:
+      - mysql
+      - -N
+      - -B
+      - -e
+      - SHOW DATABASES LIKE '{{ lamp_db_name }}';
+  register: lamp_db_exists
+  changed_when: false
+
+- name: Create the demo database
+  ansible.builtin.command:
+    argv:
+      - mysql
+      - -e
+      - CREATE DATABASE {{ lamp_db_name }} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  when: lamp_db_exists.stdout | trim | length == 0
+
+- name: Check whether the demo database user exists
+  ansible.builtin.command:
+    argv:
+      - mysql
+      - -N
+      - -B
+      - -e
+      - SELECT User FROM mysql.user WHERE User='{{ lamp_db_user }}';
+  register: lamp_db_user_exists
+  changed_when: false
+
+- name: Create the demo database user (localhost only)
+  ansible.builtin.command:
+    argv:
+      - mysql
+      - -e
+      - CREATE USER IF NOT EXISTS '{{ lamp_db_user }}'@'localhost' IDENTIFIED BY '{{ lamp_db_password }}';
+  when: lamp_db_user_exists.stdout | trim | length == 0
+
+- name: Grant the demo user full access to the demo database
+  ansible.builtin.command:
+    argv:
+      - mysql
+      - -e
+      - GRANT ALL PRIVILEGES ON {{ lamp_db_name }}.* TO '{{ lamp_db_user }}'@'localhost'; FLUSH PRIVILEGES;
+  changed_when: false

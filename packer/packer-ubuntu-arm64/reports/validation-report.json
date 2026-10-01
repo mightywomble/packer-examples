@@ -1,0 +1,10 @@
+{
+    "apache_service": "apache2",
+    "apache_state": "running",
+    "distribution": "Ubuntu 26.04",
+    "lamp_page_marker": true,
+    "lamp_page_status": 200,
+    "mariadb_state": "running",
+    "os_family": "Debian",
+    "timestamp_utc": "2026-10-01T15:31:53Z"
+}

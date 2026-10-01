@@ -1,0 +1,5 @@
+---
+db_packages:
+  - mariadb-server
+  - python3-PyMySQL
+db_service: mariadb
