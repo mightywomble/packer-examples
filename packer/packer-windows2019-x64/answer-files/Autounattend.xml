@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Unattended answer file for Windows Server 2019 EVAL x64 on VirtualBox.
+     Templated by Packer (edition_index, product_key, winrm_password) and
+     delivered on the supplemental "UNATTEND" CD; Windows Setup picks it up
+     from any CD root automatically.
+
+     Design notes carried over from the ARM64 project (learned the hard way
+     there, 2026-09-29/30):
+       - WinRM is configured at FIRST LOGON (FirstLogonCommands), never in
+         the specialize pass: enabling it mid-specialize crashed setup with
+         the "computer restarted unexpectedly" reboot loop while devices
+         were still installing.
+       - The FirstLogonCommand scans C:..I: with retries for the bootstrap
+         script: supplemental CD drive letters can lag first logon, and a
+         one-shot scan silently found nothing and left WinRM down.
+       - Windows Server uses the built-in Administrator account (no local
+         "packer" user): the server OOBE administrator-password screen is
+         suppressed by UserAccounts/AdministratorPassword, and autologon
+         runs the FirstLogonCommands as Administrator.
+
+     BIOS/MBR disk layout (VirtualBox builder default firmware): 100 MB
+     active "System Reserved" partition + extended C:. No EFI/MSR here -
+     that layout belongs to EFI boots like the ARM64 build. -->
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+    <settings pass="windowsPE">
+        <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <SetupUILanguage>
+                <UILanguage>en-US</UILanguage>
+            </SetupUILanguage>
+            <InputLocale>en-US</InputLocale>
+            <SystemLocale>en-US</SystemLocale>
+            <UILanguage>en-US</UILanguage>
+            <UserLocale>en-US</UserLocale>
+        </component>
+        <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <DiskConfiguration>
+                <Disk wcm:action="add">
+                    <DiskID>0</DiskID>
+                    <WillWipeDisk>true</WillWipeDisk>
+                    <CreatePartitions>
+                        <CreatePartition wcm:action="add">
+                            <Order>1</Order>
+                            <Type>Primary</Type>
+                            <Size>100</Size>
+                        </CreatePartition>
+                        <CreatePartition wcm:action="add">
+                            <Order>2</Order>
+                            <Type>Primary</Type>
+                            <Extend>true</Extend>
+                        </CreatePartition>
+                    </CreatePartitions>
+                    <ModifyPartitions>
+                        <ModifyPartition wcm:action="add">
+                            <Order>1</Order>
+                            <PartitionID>1</PartitionID>
+                            <Label>System Reserved</Label>
+                            <Format>NTFS</Format>
+                            <Active>true</Active>
+                        </ModifyPartition>
+                        <ModifyPartition wcm:action="add">
+                            <Order>2</Order>
+                            <PartitionID>2</PartitionID>
+                            <Label>Windows</Label>
+                            <Letter>C</Letter>
+                            <Format>NTFS</Format>
+                        </ModifyPartition>
+                    </ModifyPartitions>
+                </Disk>
+            </DiskConfiguration>
+            <ImageInstall>
+                <OSImage>
+                    <InstallFrom>
+                        <MetaData wcm:action="add">
+                            <Key>/IMAGE/INDEX</Key>
+                            <Value>${edition_index}</Value>
+                        </MetaData>
+                    </InstallFrom>
+                    <InstallTo>
+                        <DiskID>0</DiskID>
+                        <PartitionID>2</PartitionID>
+                    </InstallTo>
+                </OSImage>
+            </ImageInstall>
+            <UserData>
+                <AcceptEula>true</AcceptEula>
+                <FullName>Packer</FullName>
+                <Organization>Packer Demo</Organization>
+                <!-- NO ProductKey, deliberately. The EVAL ISO's images are
+                     ServerStandardEval / ServerDatacenterEval editions; a
+                     product key pins setup to the key's edition, and the
+                     2019 Standard GVLK (EditionID ServerStandard) matched
+                     NOTHING - setup then stopped at "Select the operating
+                     system" with an empty, key-filtered image list, forever
+                     (proven 2026-10-07 from setup's own log lines pulled out
+                     of a guest memory dump:
+                     "CallBack_SelectImageOrShowUi: There are no matching OS
+                     images" + "SelectOSImages: Using EditionID as constraint
+                     and couldn't find any matching image"). Evaluation media
+                     installs keyless and runs as a 180-day evaluation;
+                     /IMAGE/INDEX below selects the edition. -->
+            </UserData>
+        </component>
+    </settings>
+
+    <!-- specialize: computer name + network discovery prompt suppression.
+         WinRM stays OUT of this pass (see header note) - it is bootstrapped
+         at first logon instead. -->
+    <settings pass="specialize">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <ComputerName>WIN2019-GOLDEN</ComputerName>
+        </component>
+        <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <RunSynchronous>
+                <!-- 2026-10-07, fourth run: the VM reached first logon but sat
+                     on the blocking "Do you want this PC to be discoverable?"
+                     NLA dialog (Yes/No). Nothing past it runs - no desktop,
+                     no FirstLogonCommands, no WinRM - and Packer waits for
+                     WinRM forever. NewNetworkWindowOff suppresses that
+                     dialog machine-wide, which is exactly the permanent
+                     "No" (not discoverable / Public profile) behavior this
+                     template wants - deployed clones inherit it too. -->
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>1</Order>
+                    <Description>Suppress network discovery prompt (permanent No)</Description>
+                    <Path>reg add "HKLM\SYSTEM\CurrentControlSet\Control\Network" /v NewNetworkWindowOff /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+            </RunSynchronous>
+        </component>
+    </settings>
+
+    <!-- oobeSystem: locale, Administrator password, autologon, WinRM
+         bootstrap via FirstLogonCommands. -->
+    <settings pass="oobeSystem">
+        <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <InputLocale>en-US</InputLocale>
+            <SystemLocale>en-US</SystemLocale>
+            <UILanguage>en-US</UILanguage>
+            <UserLocale>en-US</UserLocale>
+        </component>
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <OOBE>
+                <HideEULAPage>true</HideEULAPage>
+                <ProtectYourPC>1</ProtectYourPC>
+            </OOBE>
+            <UserAccounts>
+                <AdministratorPassword>
+                    <Value>${winrm_password}</Value>
+                    <PlainText>true</PlainText>
+                </AdministratorPassword>
+            </UserAccounts>
+            <AutoLogon>
+                <Password>
+                    <Value>${winrm_password}</Value>
+                    <PlainText>true</PlainText>
+                </Password>
+                <Enabled>true</Enabled>
+                <LogonCount>1</LogonCount>
+                <Username>Administrator</Username>
+            </AutoLogon>
+            <FirstLogonCommands>
+                <SynchronousCommand wcm:action="add">
+                    <Order>1</Order>
+                    <Description>Bootstrap WinRM for Packer</Description>
+                    <!-- Retry-wait for the unattend CD to get a drive letter
+                         (drive letters can lag first logon by seconds), then
+                         run the bootstrap script from it. -->
+                    <CommandLine>powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "$s=$null;for($i=0;$i -lt 45 -and -not $s;$i++){foreach($l in 'C','D','E','F','G','H','I'){$p=$l+':\00-bootstrap-winrm.ps1';if(Test-Path $p){$s=$p}};if(-not $s){Start-Sleep 2}};if($s){&amp; $s}"</CommandLine>
+                </SynchronousCommand>
+            </FirstLogonCommands>
+        </component>
+    </settings>
+</unattend>

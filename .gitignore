@@ -13,6 +13,10 @@ output-*/
 output/
 # Packer manifest (regenerated each build)
 packer_manifest.json
+manifest.json
+manifest.txt
+# Packer checksum post-processor output (regenerated each build)
+SHA256SUMS
 # Generated VM images / disk formats
 *.box
 *.ova
